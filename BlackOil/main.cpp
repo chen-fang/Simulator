@@ -17,7 +17,7 @@ int main ()
 {
    DiscreteProblem problem;
    problem.Initialize();
-
+   problem.Evaluate_Accumulate( 0.2, PROPERTY::Pc_Drainage );
    
    return -1;
 }

@@ -61,6 +61,10 @@ namespace PROPERTY
    {
       return _Po - _Pc;
    }
+   ADscalar Pc ( const ADscalar& _Po, const ADscalar& _Pw )
+   {
+      return _Po - _Pw;
+   }   
 
 
    /** compressibility **/
@@ -137,8 +141,7 @@ namespace PROPERTY
    }
 
    /** read from file **/
-   void Read_Porosity_b_AND_K ( std::string _filename,
-				std::vector<double>& _vec_porosity_b = vec_porosity_b )
+   void Read_Layer_Property ( std::string _filename )
    {
       /* File Format
        * For each row: poro_b -- Kx -- Ky -- Kz
@@ -152,7 +155,7 @@ namespace PROPERTY
 	 std::istringstream ss( tmp_line );
 	 double value;
 	 ss >> value;
-	 _vec_porosity_b.push_back( value );
+	 vec_porosity_b.push_back( value );
 	 ss >> value;
 	 AbsK :: vec_Kx.push_back( value );
 	 ss >> value;
@@ -240,7 +243,10 @@ namespace PROPERTY
       {
 	 ++i;
       }
-      return Pc_Table::vec_drainage[i] + Pc_Table::vec_drainage_slope[i] * ( _Sw-Pc_Table::vec_Sw[i] );
+      std::cout << "Pc_Drainage: "<< _Sw.value() << "\t" << i << "\t"
+		<< Pc_Table::vec_Sw[i] << std::endl;
+      return Pc_Table::vec_drainage[i] +
+	     Pc_Table::vec_drainage_slope[i] * ( _Sw - Pc_Table::vec_Sw[i] );
    }
 
    ADscalar Pc_Imbibition ( const ADscalar& _Sw )

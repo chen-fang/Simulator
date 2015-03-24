@@ -1,11 +1,11 @@
 #pragma once
+//#include <functional>
 
 #include "FluidRockProperty.hpp"
 #include "Gridding.hpp"
 
 struct CentralProperty
 {
-   
    ADscalar kro, krw;
    ADscalar pw, pc;
    ADscalar bo, bw;
@@ -28,7 +28,13 @@ class DiscreteProblem
 {
 public:
    DiscreteProblem();
-   
+
+
+   void     Update_Property( std::size_t _grid_number,
+			     ADscalar (*_Pc_Function)( const ADscalar& ) );
+   //std::function< ADscalar(const ADscalar&) > _Pc_Function );
+      void     Update_Property( ADscalar (*_Pc_Function)( const ADscalar& ) );
+   //std::function< ADscalar(const ADscalar&) > _Pc_Function );
    double   Accum_Constant ( double _time_step, double _del_x, double _del_y, double _del_z );
    ADscalar Accum_Term     ( double _accum_constant, const ADscalar& _porosity,
 			     const ADscalar& _saturation, const ADscalar& _volume_factor );
@@ -37,11 +43,15 @@ public:
    void     Fill_HorizontalLayer ( std::size_t _Kth_layer, double _Po, double _Sw );
    void     Initialize     ();
 
-   void     Evaluate_CentralProperty_and_Accumulate ( double _time_step );
+   void     Evaluate_Accumulate ( double _time_step,
+				  ADscalar (*_Pc_Function)( const ADscalar& ) );
+   //std::function< ADscalar(const ADscalar&) > _Pc_Function );
    CentralProperty& GetUpstream ( const ADscalar& _pressure_left,  const ADscalar& _pressure_right,
 				  std::size_t _gdbk_left, std::size_t _gdbk_right );
    void     Evaluate_Flux  ();
-   void     Evaluate       ( double _time_step );
+   void     Evaluate       ( double _time_step,
+			     ADscalar (*_Pc_Function)( const ADscalar& ) );
+   //std::function< ADscalar(const ADscalar&) > _Pc_Function );
    
 
 private:
@@ -83,6 +93,9 @@ DiscreteProblem :: DiscreteProblem ()
    interfcprop.trans_constant_z = PROPERTY::Trans_Constant( grid.Nx, grid.Ny, grid.Nz );
    
    PROPERTY :: Generate_Capillary_Table( "3_layer_reservoir_properties/capillary.txt" );
+   PROPERTY :: Read_Layer_Property     ( "3_layer_reservoir_properties/layer_1.txt" );
+   PROPERTY :: Read_Layer_Property     ( "3_layer_reservoir_properties/layer_2.txt" );
+   PROPERTY :: Read_Layer_Property     ( "3_layer_reservoir_properties/layer_3.txt" );
 
    const std::size_t Grid_Number = grid.Nx * grid.Ny * grid.Nz;
    const std::size_t Var_Number = 2 * Grid_Number;
@@ -92,6 +105,79 @@ DiscreteProblem :: DiscreteProblem ()
    residual.resize       ( Var_Number );
 }
 
+void DiscreteProblem :: Update_Property( std::size_t _grid_number,
+					 ADscalar (*_Pc_Function)( const ADscalar& ) )
+//std::function< ADscalar(const ADscalar&) > _Pc_Function )
+{
+   std::cout << "---------------------------------------- "<< _grid_number << std::endl;
+   // evaluate properties at the center of grid blocks
+   CentralProperty& prop = vec_centralprop[ _grid_number ];
+   const std::size_t PoIndex = GetPoIndex( _grid_number );
+   const std::size_t SwIndex = GetSwIndex( _grid_number );
+   const ADscalar& _Po = vec_unknown[ PoIndex ];
+   const ADscalar& _Sw = vec_unknown[ SwIndex ];
+
+   ADscalar S_wd = PROPERTY::Swd( _Sw );
+   prop.kro = PROPERTY::Kro( S_wd );
+   prop.krw = PROPERTY::Krw( S_wd );
+	    
+   prop.pc  = _Pc_Function( _Sw );
+   // std::cout << "wtf_Sw =\t" << _Sw.value() << std::endl;
+   // std::cout << "wtf_Po =\t" << _Po.value() << std::endl;
+   // std::cout << "wtf_Pc =\t" << prop.pc.value() << std::endl;
+   ADscalar p_w = PROPERTY::Pw( _Po, prop.pc );
+   //std::cout << "wft_pw =\t" << p_w.value() << std::endl;
+   prop.pw = p_w;
+   ADscalar b_o = PROPERTY::Bo ( _Po );
+   ADscalar b_w = PROPERTY::Bw ( prop.pw );
+   prop.bo = b_o;
+   prop.bw = b_w;
+   ADscalar dens_o = PROPERTY::Density_Oil( b_o );
+   ADscalar dens_w = PROPERTY::Density_Wat( b_w );
+   ADscalar spwt_o = PROPERTY::SpecificWeight( dens_o );
+   ADscalar spwt_w = PROPERTY::SpecificWeight( dens_w );	    
+   prop.spec_weight_oil = spwt_o;
+   prop.spec_weight_wat = spwt_w;
+   prop.viscosity_oil = PROPERTY::VisO;
+   prop.viscosity_wat = PROPERTY::VisW;
+   double porosity_b = PROPERTY::vec_porosity_b[ _grid_number ];
+   prop.porosity    = PROPERTY::Porosity( _Po, porosity_b );
+
+
+   std::cout << "****************"<< std::endl;
+   std::cout << "Po =\t" << _Po.value() << std::endl;
+   std::cout << "Sw =\t" << _Sw.value() << std::endl;
+   std::cout << "Pw =\t" << prop.pw.value() << std::endl;   
+   std::cout << "Pc =\t" << prop.pc.value() << std::endl;
+   std::cout << "****************"<< std::endl;
+   std::cout << "Kro =\t" << prop.kro.value() << std::endl;
+   std::cout << "Krw =\t" << prop.krw.value() << std::endl;
+   std::cout << "Bo =\t" << prop.bo.value() << std::endl;
+   std::cout << "Bw =\t" << prop.bw.value() << std::endl;
+   std::cout << "spwto =\t" << prop.spec_weight_oil.value() << std::endl;
+   std::cout << "spwtw =\t" << prop.spec_weight_wat.value() << std::endl;
+   std::cout << "viso =\t" << prop.viscosity_oil.value() << std::endl;
+   std::cout << "visw =\t" << prop.viscosity_wat.value() << std::endl;
+   std::cout << "poro =\t" << prop.porosity.value() << std::endl;
+}
+
+void DiscreteProblem :: Update_Property ( ADscalar (*_Pc_Function)( const ADscalar& ) )
+//std::function< ADscalar(const ADscalar&) > _Pc_Function )
+{
+   std::size_t count_grid_number = 0;
+   for( std::size_t k = 0; k < grid.Nz; ++k )
+   {
+      for( std::size_t j = 0; j < grid.Ny; ++j )
+      {
+	 for( std::size_t i = 0; i < grid.Nx; ++i )
+	 {
+	    Update_Property( count_grid_number, _Pc_Function );
+	    ++count_grid_number;
+	 }
+      }
+   }
+}
+	 
 double DiscreteProblem :: Accum_Constant ( double _time_step,
 					   double _del_x, double _del_y, double _del_z )
 {
@@ -188,60 +274,59 @@ void DiscreteProblem :: Initialize ()
       }
       --track_Kth_layer;
    }
+
+   /*
+   for( std::size_t i = 0; i < grid.Nx*grid.Ny*grid.Nz; ++i )
+   {
+      const std::size_t PoIndex = GetPoIndex( i );
+      const std::size_t SwIndex = GetSwIndex( i );
+      const ADscalar& Po = vec_unknown[ PoIndex ];
+      const ADscalar& Sw = vec_unknown[ SwIndex ];
+
+      
+      std::cout << "---------------------------------------- "<< i << std::endl;
+      std::cout << "Po =\t" << Po.value() << std::endl;
+      std::cout << "Sw =\t" << Sw.value() << std::endl;
+      ADscalar pc;
+      pc = PROPERTY::Pc_Drainage( Sw );
+      std::cout << "Pc =\t" << pc.value() << std::endl;   
+      std::cout << "Pw =\t" << PROPERTY::Pw( Po, pc ).value() << std::endl;
+      
+   }
+   */
 }
 
-void DiscreteProblem :: Evaluate_CentralProperty_and_Accumulate ( double _time_step )
+void DiscreteProblem :: Evaluate_Accumulate ( double _time_step,
+					      ADscalar (*_Pc_Function)( const ADscalar& ) )
+//std::function< ADscalar(const ADscalar&) > _Pc_Function )
 {
    const double accum_constant = Accum_Constant( _time_step, grid.Dx, grid.Dy, grid.Dz );
-   
-   std::size_t count_grid = 0;
+   std::size_t count_grid_number = 0;
    for( std::size_t k = 0; k < grid.Nz; ++k )
    {
       for( std::size_t j = 0; j < grid.Ny; ++j )
       {
 	 for( std::size_t i = 0; i < grid.Nx; ++i )
 	 {
-	    // evaluate properties at the center of grid blocks
-	    std::size_t PoIndex = GetPoIndex( i, j, k );
-	    std::size_t SwIndex = GetSwIndex( i, j, k );
-	    CentralProperty& prop = vec_centralprop[ count_grid ];
+	    // evaluate
+	    Update_Property( count_grid_number, _Pc_Function );
 
-	    ADscalar S_wd = PROPERTY::Swd( vec_unknown[SwIndex] );
-	    prop.kro = PROPERTY::Kro( S_wd );
-	    prop.krw = PROPERTY::Krw( S_wd );
+	    // accumulate
+	    const CentralProperty& prop = vec_centralprop[ count_grid_number ];
+	    const std::size_t PoIndex = GetPoIndex( count_grid_number );
+	    const std::size_t SwIndex = GetSwIndex( count_grid_number );	    
 	    
-
-	    ADscalar p_w = PROPERTY::Pw( vec_unknown[PoIndex], prop.pc );
-	    prop.pw = p_w;
-	    prop.pc  = PROPERTY::Pc_Imbibition( vec_unknown[SwIndex] );	    
-	    ADscalar b_o = PROPERTY::Bo ( vec_unknown[PoIndex] );
-	    ADscalar b_w = PROPERTY::Bw ( prop.pw );
-	    prop.bo = b_o;
-	    prop.bw = b_w;
-	    ADscalar dens_o = PROPERTY::Density_Oil( b_o );
-	    ADscalar dens_w = PROPERTY::Density_Wat( b_w );
-	    ADscalar spwt_o = PROPERTY::SpecificWeight( dens_o );
-	    ADscalar spwt_w = PROPERTY::SpecificWeight( dens_w );	    
-	    prop.spec_weight_oil = spwt_o;
-	    prop.spec_weight_wat = spwt_w;
-	    prop.viscosity_oil = PROPERTY::VisO;
-	    prop.viscosity_wat = PROPERTY::VisW;
-	    double porosity_b = PROPERTY::vec_porosity_b[count_grid];
-	    prop.porosity    = PROPERTY::Porosity( vec_unknown[PoIndex],
-									  porosity_b );
-
-	    // accumulation
 	    // oil phase
-	    residual[PoIndex] = Accum_Term( accum_constant,
-					    prop.porosity,
-					    vec_unknown[SwIndex],
-					    b_o );
+	    residual[PoIndex] += Accum_Term( accum_constant,
+					     prop.porosity,
+					     vec_unknown[SwIndex],
+					     prop.bo );
 	    // water phase
-	    residual[SwIndex] = Accum_Term( accum_constant,
-					    prop.porosity,
-					    vec_unknown[SwIndex],
-					    b_w );
-	    ++count_grid;
+	    residual[SwIndex] += Accum_Term( accum_constant,
+					     prop.porosity,
+					     vec_unknown[SwIndex],
+					     prop.bw );
+	    ++count_grid_number;
 	 }
       }
    }
@@ -337,8 +422,10 @@ void DiscreteProblem :: Evaluate_Flux ()
 }
 
 
-void DiscreteProblem :: Evaluate ( double _time_step )
+void DiscreteProblem :: Evaluate ( double _time_step,
+				   ADscalar (*_Pc_Function)( const ADscalar& ) )
+//std::function< ADscalar(const ADscalar&) > _Pc_Function )
 {
-   Evaluate_CentralProperty_and_Accumulate( _time_step );
+   Evaluate_Accumulate( _time_step, _Pc_Function );
    Evaluate_Flux();
 }
