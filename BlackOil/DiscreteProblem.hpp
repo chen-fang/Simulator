@@ -30,7 +30,7 @@ public:
    void Evaluate ( double _time_step );
 
 private:
-   void     Initialize();
+   void     Initialize_Unknown();
    void     Initialize_K_interface();
    void     Update_GridProperty   ( std::size_t _grid_number );
    void     Update_AllProperty    ();
@@ -104,7 +104,7 @@ DiscreteProblem :: DiscreteProblem ()
    residual.resize       ( Var_Number );
 
    interfcprop.K_interface.resize( CList.Size );
-   Initialize_K_interface;
+   Initialize_K_interface();
    
    Initialize_Unknown();
 }
@@ -154,25 +154,22 @@ void DiscreteProblem :: Initialize_K_interface()
       const std::size_t right_index = CList[count].right;
       interfcprop.K_interface[count] = PROPERTY::K_Interface( PROPERTY::AbsK::vec_Kx[ left_index ],
 							      PROPERTY::AbsK::vec_Kx[ right_index ] );
-      ++count;
    }
    
-   for( ; count < CList.XSize; ++count )
+   for( ; count < CList.XSize + CList.YSize; ++count )
    {
       const std::size_t left_index = CList[count].left;
       const std::size_t right_index = CList[count].right;
       interfcprop.K_interface[count] = PROPERTY::K_Interface( PROPERTY::AbsK::vec_Ky[ left_index ],
 							      PROPERTY::AbsK::vec_Ky[ right_index ] );
-      ++count;
    }
    
-   for( ; count < CList.XSize; ++count )
+   for( ; count < CList.Size; ++count )
    {
       const std::size_t left_index = CList[count].left;
       const std::size_t right_index = CList[count].right;
       interfcprop.K_interface[count] = PROPERTY::K_Interface( PROPERTY::AbsK::vec_Kz[ left_index ],
-							      PROPERTY::AbsK::ec_Kz[ right_index ] );
-      ++count;
+							      PROPERTY::AbsK::vec_Kz[ right_index ] );
    }
 }
 
@@ -261,7 +258,7 @@ void DiscreteProblem :: Evaluate_Accumulation ( double _time_step )
 	    // oil phase
 	    residual[PoIndex] += Accum_Term( accum_constant,
 					     prop.porosity,
-					     vec_unknown[SwIndex],
+					     1.0 - vec_unknown[SwIndex],
 					     prop.bo );
 	    // water phase
 	    residual[SwIndex] += Accum_Term( accum_constant,
@@ -281,7 +278,6 @@ void DiscreteProblem :: Evaluate_Flux ()
    double del_depth;
    for( std::size_t clist_index = 0; clist_index < CList.Size; ++clist_index )
    {
-      std::cout << "------------------------------------- " << clist_index << std::endl;
       // direction-dependent properties
       if( clist_index < CList.XSize )
       {
@@ -302,11 +298,13 @@ void DiscreteProblem :: Evaluate_Flux ()
       left_gdbk =  CList[clist_index].left;
       right_gdbk = CList[clist_index].right;
 
-      std::cout << left_gdbk << "\t" << right_gdbk << std::endl;
+
 
       double K_inter = interfcprop.K_interface[ clist_index ];
 
-      std::cout << "here" << std::endl;
+      // std::cout << "------------------------------------- " << clist_index << std::endl;
+      // std::cout << left_gdbk << "\t" << right_gdbk << std::endl;
+      // std::cout << "K_inter =\t" << K_inter << std::endl;
       
       // oil phase & water phase ( assume concurrent flow ONLY )
       std::size_t PoIndex_L = GetPoIndex( left_gdbk );
@@ -378,32 +376,22 @@ double DiscreteProblem :: Accum_Constant ( double _time_step,
    return _del_x * _del_y * _del_z / 5.615 / _time_step;
 }
 
-ADscalar
-DiscreteProblem ::
-Accum_Term ( double _accum_constant,
-	     const ADscalar& _porosity,
-	     const ADscalar& _saturation,
-	     const ADscalar& _volume_factor ) const
+ADscalar DiscreteProblem :: Accum_Term ( double _accum_constant,
+					 const ADscalar& _porosity,
+					 const ADscalar& _saturation,
+					 const ADscalar& _volume_factor ) const
 {
    return _accum_constant * ( _porosity * _saturation / _volume_factor );
 }
 
-ADscalar
-DiscreteProblem ::
-Flux_Term ( const ADscalar& _transmissibility,
-	    const ADscalar& _potential) const
+ADscalar DiscreteProblem :: Flux_Term ( const ADscalar& _transmissibility,
+					const ADscalar& _potential) const
 {
    return _transmissibility * _potential;
 }
 
 
-
-
-
-
 // Auxillary Fucntions
-
-   
 void DiscreteProblem :: ClearCentralProperty ()
 {
    for( std::size_t i = 0; i < vec_centralprop.size(); ++i )

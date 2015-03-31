@@ -16,8 +16,8 @@ void print ( T1 a, T2 b )
 int main ()
 {
    DiscreteProblem problem;
-   problem.Initialize();
-   problem.Evaluate_Accumulate( 0.2, PROPERTY::Pc_Drainage );
+   //problem.Initialize();
+   problem.Evaluate( 0.2 );
    
    return -1;
 }

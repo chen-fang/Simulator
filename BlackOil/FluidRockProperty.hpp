@@ -15,68 +15,29 @@ using std::vector;
 
 namespace PROPERTY
 {
-   /** static containers **/
-   struct AbsK
-   {
-      static vector<double> vec_Kx;
-      static vector<double> vec_Ky;
-      static vector<double> vec_Kz;
-   };
-   vector<double> AbsK:: vec_Kx;
-   vector<double> AbsK:: vec_Ky;
-   vector<double> AbsK:: vec_Kz;
-
-   struct Pc_Table
-   {
-      /* drainage curve   -- initialization
-       * imbibition curve -- water flooding process
-       */
-      static vector<double> vec_Sw;
-      static vector<double> vec_drainage;
-      static vector<double> vec_imbibition;
-      //
-      static vector<double> vec_drainage_slope;
-      static vector<double> vec_imbibition_slope;
-      //
-      static double Compute_Slope ( double _Pc_1, double _Pc_2, double _Sw_1, double _Sw_2 )
-      {
-	 return ( _Pc_1 - _Pc_2 ) / ( _Sw_1 - _Sw_2 );
-      }
-   };
-   vector<double> Pc_Table:: vec_Sw;
-   vector<double> Pc_Table:: vec_drainage;
-   vector<double> Pc_Table:: vec_imbibition;
-   vector<double> Pc_Table:: vec_drainage_slope;
-   vector<double> Pc_Table:: vec_imbibition_slope;
-
-   
-   /** saturation **/
+   /** saturation **///---------------------------------------------------------------------
    const ADscalar Siw = 0.3;
    const ADscalar Sor = 0.2;
    
-   /** pressure **/
-   const ADscalar Pb = 14.7; // [ psi ]
+   /** pressure **///-----------------------------------------------------------------------
+   const ADscalar Pb = 14.7;  // [ psi ]
    const ADscalar Poi = 3500; // [ psi ], initial oil phase pressure @ bottom of reservoir
-   ADscalar Pw ( const ADscalar& _Po, const ADscalar& _Pc )
+   const ADscalar Pc = 0.0;   // [ psi ]
+   ADscalar Pw ( const ADscalar& _Po )
    {
-      return _Po - _Pc;
+      return _Po;
    }
-   ADscalar Pc ( const ADscalar& _Po, const ADscalar& _Pw )
-   {
-      return _Po - _Pw;
-   }   
 
-
-   /** compressibility **/
+   /** compressibility **///---------------------------------------------------------------
    const ADscalar Co = 1.0E-05;
    const ADscalar Cw = 3.0E-06;
    const ADscalar Cr = 0.0E-00;
 
-   /** viscosoty **/
+   /** viscosoty **///---------------------------------------------------------------------
    const ADscalar VisO = 1.1;
    const ADscalar VisW = 0.8;
 
-   /** volume factor **/
+   /** volume factor **///-----------------------------------------------------------------
    const ADscalar Bob = 1.0;
    const ADscalar Bwb = 1.0;
    ADscalar Bo ( const ADscalar& _Po,
@@ -90,7 +51,7 @@ namespace PROPERTY
       return _Bwb * ( 1.0 - _Cw * ( _Pw - _Pb ) );
    }
 
-   /** density **/
+   /** density **///----------------------------------------------------------------------
    ADscalar DensOil_sc = 53;  // [ lbm/ft3 ]
    ADscalar DensWat_sc = 65;  // [ lbm/ft3 ]
    ADscalar Density_Oil ( const ADscalar& _Bo,
@@ -105,7 +66,17 @@ namespace PROPERTY
       return _DensWat_sc / _Bw;
    }
 
-   /** permeability **/
+   /** permeability **///-----------------------------------------------------------------
+   struct AbsK
+   {
+      static vector<double> vec_Kx;
+      static vector<double> vec_Ky;
+      static vector<double> vec_Kz;
+   };
+   vector<double> AbsK:: vec_Kx;
+   vector<double> AbsK:: vec_Ky;
+   vector<double> AbsK:: vec_Kz;
+   
    ADscalar Swd ( const ADscalar& _Sw,
 		  const ADscalar& _Siw = Siw, const ADscalar& _Sor = Sor )
    {
@@ -131,7 +102,7 @@ namespace PROPERTY
       return 2.0 * _K_1 * _K_2 / ( _K_1 + _K_2 );
    }
 
-   /** porosity **/
+   /** porosity **///---------------------------------------------------------------------
    static std::vector<double> vec_porosity_b; // read from file
    
    ADscalar Porosity ( const ADscalar& _Po, double _Porosity_b,
@@ -165,51 +136,8 @@ namespace PROPERTY
       }
    }
 
-   void Generate_Capillary_Table ( std::string _filename )
-   {
-      /* File Format
-       * For each row: Sw -- Pc_drainage -- Pc_imbibition
-       */
-      std::ifstream input( _filename );
-      std::string tmp_line;
-      getline( input, tmp_line ); // skip
-      while( getline( input, tmp_line ) )
-      {
-	 std::istringstream ss( tmp_line );
-	 double value;
-	 ss >> value;
-	 Pc_Table::vec_Sw.push_back( value );
-	 ss >> value;
-	 Pc_Table::vec_drainage.push_back( value );
-	 ss >> value;
-	 Pc_Table::vec_imbibition.push_back( value );
-      }
-      // Compute Slope
-      Pc_Table::vec_drainage_slope.reserve( Pc_Table::vec_drainage.size() );
-      Pc_Table::vec_imbibition_slope.reserve( Pc_Table::vec_imbibition.size() );
 
-      for( std::size_t i = 1; i < Pc_Table::vec_drainage.size(); ++i )
-      {
-	 Pc_Table::vec_drainage_slope[i] = Pc_Table::Compute_Slope ( Pc_Table::vec_drainage[i],
-								     Pc_Table::vec_drainage[i-1],
-								     Pc_Table::vec_Sw[i],
-								     Pc_Table::vec_Sw[i-1] );
-      }
-      Pc_Table::vec_drainage_slope[0] = Pc_Table::vec_drainage_slope[1];
-
-      for( std::size_t i = 1; i < Pc_Table::vec_imbibition.size(); ++i )
-      {
-	 Pc_Table::vec_imbibition_slope[i] = Pc_Table::Compute_Slope ( Pc_Table::vec_imbibition[i],
-								       Pc_Table::vec_imbibition[i-1],
-								       Pc_Table::vec_Sw[i],
-								       Pc_Table::vec_Sw[i-1] );
-      }
-      Pc_Table::vec_imbibition_slope[0] = Pc_Table::vec_imbibition_slope[1];      
-   }
-
-
-
-   /** Transmissibility **/
+   /** Transmissibility **///--------------------------------------------------------------
    double Trans_Constant ( double _del_1, double _del_2, double _del_3 )
    {
       return 1.127E-03 * _del_1 * _del_2 / _del_3;
@@ -221,13 +149,13 @@ namespace PROPERTY
       return _trans_constant * _K * _Kr / _viscosity / _volume_factor;
    }
 
-   /** Specific Weight **/
+   /** Specific Weight **///-----------------------------------------------------------------
    ADscalar SpecificWeight ( const ADscalar& _density )
    {
       return _density / 144.0;
    }
 
-   /** Potential **/
+   /** Potential **///-----------------------------------------------------------------------
    ADscalar Potential ( const ADscalar& _pressure_1, const ADscalar& _pressure_2,
 			const ADscalar& _spec_weight, double _del_depth )
    {
@@ -235,57 +163,7 @@ namespace PROPERTY
    }
 
 
-   /** Capillary Pressure **/ /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-   ADscalar Pc_Drainage ( const ADscalar& _Sw )
-   {
-      std::size_t i = 0;
-      while ( _Sw.value() > Pc_Table::vec_Sw[i] )
-      {
-	 ++i;
-      }
-      std::cout << "Pc_Drainage: "<< _Sw.value() << "\t" << i << "\t"
-		<< Pc_Table::vec_Sw[i] << std::endl;
-      return Pc_Table::vec_drainage[i] +
-	     Pc_Table::vec_drainage_slope[i] * ( _Sw - Pc_Table::vec_Sw[i] );
-   }
 
-   ADscalar Pc_Imbibition ( const ADscalar& _Sw )
-   {
-      std::size_t i = 0;
-      while ( _Sw.value() > Pc_Table::vec_Sw[i] )
-      {
-	 ++i;
-      }
-      return Pc_Table::vec_imbibition[i] +
-	     Pc_Table::vec_imbibition_slope[i] * ( _Sw - Pc_Table::vec_Sw[i] );
-   }
-
-   /* Note
-    * The following functions:
-    * Sw_FromPc_Drainage, Sw_FromPc_Imbibition, Find_Po(), Find_Pw
-    * uses ## double ## instead of ## ADscalar ## because Po & Sw are independent variables,
-    * the derivatives of which should be 1 w.r.t themselves, respectively.
-    */
-   double Sw_FromPc_Drainage ( double _Pc )
-   {
-      std::size_t i = 0;
-      while ( _Pc < Pc_Table::vec_drainage[i] )
-      {
-	 ++i;
-      }
-      return Pc_Table::vec_Sw[i] + (_Pc-Pc_Table::vec_drainage[i] ) / Pc_Table::vec_drainage_slope[i];
-   }
-
-   double Sw_FromPc_Imbibition ( double _Pc )
-   {
-      std::size_t i = 0;
-      while ( _Pc < Pc_Table::vec_imbibition[i] )
-      {
-	 ++i;
-      }
-      return Pc_Table::vec_Sw[i] +
-	     ( _Pc - Pc_Table::vec_imbibition[i] ) / Pc_Table::vec_imbibition_slope[i];
-   }
 
    double Find_Po ( double _Po, double _spec_weight, double _del_depth )
    {

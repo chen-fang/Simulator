@@ -20,12 +20,12 @@ struct Cartesian3D
       Nz = _nz;
    }
 
-   std::size_t GetGridBlockIndex ( std::size_t _i, std::size_t _j, std::size_t _k )
+   std::size_t GetGridBlockIndex ( std::size_t _i, std::size_t _j, std::size_t _k ) const
    {
       return _k*Ny*Nx + _j*Nx + _i;
    }
 
-   void Activate_NaturalOrdering ( ADvector& _vec_unknown )
+   void Activate_NaturalOrdering ( ADvector& _vec_unknown ) const
    {
       std::size_t count = 0;
       for( std::size_t k = 0; k < Nz; ++k )
