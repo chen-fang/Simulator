@@ -53,8 +53,7 @@ private:
    ADscalar Flux_Term      ( const ADscalar& _transmissibility,
 			     const ADscalar& _potential) const;
 
-
-
+  ADscalar Well_Term ( const Well_ConstBHP& _well );
 
    // Auxillary Functions  
    void ClearCentralProperty ();
@@ -73,8 +72,11 @@ private:
    std::vector< CentralProperty > vec_centralprop;
    InterfcProperty                interfcprop;
 
+  std::vector< Well_ConstRate > vec_const_rate_well;
+  std::vector< Well_ConstBHP >  vec_const_bhp_well;
+		       
    ADvector vec_unknown; // water saturation & oil pressure
-   ADvector residual;   
+   ADvector residual;
 };
 
 
@@ -390,6 +392,10 @@ ADscalar DiscreteProblem :: Flux_Term ( const ADscalar& _transmissibility,
    return _transmissibility * _potential;
 }
 
+ADscalar DiscreteProblem :: Well_Term ( const Well_ConstBHP& _well )
+{
+
+}
 
 // Auxillary Fucntions
 void DiscreteProblem :: ClearCentralProperty ()

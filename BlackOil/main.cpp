@@ -1,4 +1,5 @@
 #include "DiscreteProblem.hpp"
+#include "Well.hpp"
 #include <iostream>
 
 template< typename T >
@@ -15,9 +16,9 @@ void print ( T1 a, T2 b )
 
 int main ()
 {
-   DiscreteProblem problem;
+  //DiscreteProblem problem;
    //problem.Initialize();
-   problem.Evaluate( 0.2 );
+   //problem.Evaluate( 0.2 );
    
    return -1;
 }
