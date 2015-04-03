@@ -25,6 +25,11 @@ struct Cartesian3D
       return _k*Ny*Nx + _j*Nx + _i;
    }
 
+   std::size_t GetGridBlockNumber () const
+   {
+      return Nx * Ny * Nz;
+   }
+
    void Activate_NaturalOrdering ( ADvector& _vec_unknown ) const
    {
       std::size_t count = 0;
