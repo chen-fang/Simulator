@@ -38,12 +38,7 @@ struct CentralProperty
 };
 
 struct InterfcProperty
-{
-   InterfcProperty () : trans_constant_x( 0.0 ),
-			trans_constant_y( 0.0 ),
-			trans_constant_z( 0.0 )
-   {}
-			
+{			
    double trans_constant_x;
    double trans_constant_y;
    double trans_constant_z;
@@ -101,8 +96,9 @@ private: // for evaluation
    void     Evaluate_Source_Sink ();
 
 public:  // for access & information
-   int GetGridNumber () const;
-   int GetVarNumber  () const;
+   int GetGridNumber       () const { return GridNumber;       }
+   int GetVarNumber        () const { return VarNumber; }
+   int GetInjectorNumber   () const { return vec_injector.size();   }
 
    const ADvector& GetUold () const  { return mUold; }
    const ADvector& GetUnew () const  { return mUnew; }
@@ -117,8 +113,8 @@ private: // to help functionality
 
 private:
    Cartesian3D                    grid;
-   std::size_t                    GridNumber;
-   std::size_t                    VarNumber;
+   const int                      GridNumber;
+   const int                      VarNumber;
    ConnectionList                 CList;
 
    ConstProperty                  constprop;
@@ -145,16 +141,16 @@ public:
 // ================================================================================
 // ================================================================================
 // ================================================================================
-DiscreteProblem :: DiscreteProblem () : grid( 200, 200, 25, 2, 1, 1 ), //20-30-3
-					GridNumber( grid.Nx * grid.Ny * grid.Nz ),
-					VarNumber ( 2 * GridNumber ),
-					CList( grid ),
-					vec_centralprop( GridNumber, CentralProperty() ),
-					interfcprop    (),
-					vec_accum_old  ( VarNumber, 0.0 ),
-					mUnew          ( VarNumber, 0.0 ),
-					mUold          ( VarNumber, 0.0 ),
-					residual       ( VarNumber, 0.0 )
+DiscreteProblem :: DiscreteProblem () : grid( 200, 200, 25, 20, 30, 3 ), //20-30-3
+					GridNumber      ( grid.Nx * grid.Ny * grid.Nz ),
+					VarNumber_Base  ( 2 * GridNumber ),
+					CList           ( grid ),
+					vec_centralprop ( GridNumber, CentralProperty() ),
+					interfcprop     (),
+					vec_accum_old   ( VarNumber_Base, 0.0 ),
+					mUnew           ( VarNumber_Base, 0.0 ),
+					mUold           ( VarNumber_Base, 0.0 ),
+					residual        ( VarNumber_Base, 0.0 )
 {
    interfcprop.trans_constant_x = PROPERTY::Trans_Constant( grid.Dy, grid.Dz, grid.Dx );
    interfcprop.trans_constant_y = PROPERTY::Trans_Constant( grid.Nx, grid.Nz, grid.Ny );
@@ -164,22 +160,18 @@ DiscreteProblem :: DiscreteProblem () : grid( 200, 200, 25, 2, 1, 1 ), //20-30-3
    constprop.Read_From_File( "3_layer_reservoir_properties/layer_2.txt" );
    constprop.Read_From_File( "3_layer_reservoir_properties/layer_3.txt" );
 
+   Activate_Uold();
  
    // inject water with constant rate
-   //Add_Well_ConstRate( 1, -100, 6,  6,  2 );
-   //Add_Well_ConstRate( 1, -100, 17, 26, 2 );
-   Add_Injector( 10, 1, 0, 0 );
+   Add_Injector( 100, 6,  6,  2 );
+   Add_Injector( 100, 17, 26, 2 );
 
    // producer with constant bottom pressure
-   // Add_Well_ConstBHP( 0, 3500, 5,  4,  0 );
-   // Add_Well_ConstBHP( 0, 3500, 16, 5,  0 );      
-   // Add_Well_ConstBHP( 0, 3500, 6,  23, 0 );
-   // Add_Well_ConstBHP( 0, 3500, 5,  21, 0 );
-   
-   Add_Producer( 3000, 0, 0, 0 );
+   Add_Producer( 800, 5,  4,  0 );
+   Add_Producer( 800, 16, 5,  0 );
+   Add_Producer( 800, 6,  23, 0 );
+   Add_Producer( 800, 5,  21, 0 );
 
-
-   Activate_Uold();
    mUnew = mUold;
    
    interfcprop.K_interface.resize( CList.Size );
@@ -192,15 +184,23 @@ DiscreteProblem :: DiscreteProblem () : grid( 200, 200, 25, 2, 1, 1 ), //20-30-3
 // --- ---
 void DiscreteProblem :: Activate_Uold()
 {
-   // 1. Activation
-   grid.Activate_NaturalOrdering( mUold );
-   // 2. Initialize Po and Sw
-   for( int i = 0; i < GetGridNumber(); ++i )
+   // 1. Initialize Po and Sw
+   for( int i = 0; i < GridNumber; ++i )
    {
       const std::size_t PoIndex = GetPoIndex( i );
       const std::size_t SwIndex = GetSwIndex( i );
       mUold[ PoIndex ].value() = constprop.Poi.value();
+      mUold[ PoIndex ].make_independent( PoIndex );
+      
       mUold[ SwIndex ].value() = constprop.Siw.value() + 0.25;
+      mUold[ SwIndex ].make_independent( SwIndex );
+   }
+   // 2. Initialize BHP as unknowns
+   for( int i = 0; i < GetInjectorNumber(); ++i )
+   {
+      int InjectorIndex = i + VarNumber;
+      mUold[ InjectorIndex ].value() = constprop.Poi.value();
+      mUold[ InjectorIndex ].make_independent( InjectorIndex );
    }
 }
 // --- ---
@@ -241,6 +241,10 @@ void DiscreteProblem :: Add_Injector ( double _rate,
 		  constprop.vec_Kx[ BlockIndex ], constprop.vec_Ky[ BlockIndex ] );
 
    vec_injector.push_back( well );
+   // expand
+   ADscalar tmp( 0.0 );
+   mUold.push_back( tmp );
+   residual.push_back( tmp );
 }
 //
 void DiscreteProblem :: Add_Producer  ( double _bhp,
@@ -567,8 +571,11 @@ void DiscreteProblem :: Evaluate_Flux ()
 // ================================================================== Well
 // ================================================================== Well
 // ================================================================== Well
+//
+ADscalar DiscreteProblem :: Source_Term ( const Injector& _injector )
+{
 
-
+}
 //
 ADscalar DiscreteProblem :: Sink_Term ( const Producer& _producer, int _tag )
 {
@@ -653,14 +660,4 @@ std::size_t DiscreteProblem :: GetPoIndex( std::size_t _i, std::size_t _j, std::
 std::size_t DiscreteProblem :: GetSwIndex( std::size_t _i, std::size_t _j, std::size_t _k ) const
 {
    return GetPoIndex( _i, _j, _k ) + 1;
-}
-
-int DiscreteProblem :: GetGridNumber () const
-{
-   return GridNumber;
-}
-
-int DiscreteProblem :: GetVarNumber () const
-{
-   return VarNumber;
 }

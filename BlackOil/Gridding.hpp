@@ -37,24 +37,6 @@ struct Cartesian3D
       return Nx * Ny * Nz;
    }
 
-   void Activate_NaturalOrdering ( ADvector& _vec_unknown ) const
-   {
-      std::size_t count = 0;
-      for( std::size_t k = 0; k < Nz; ++k )
-      {
-	 for( std::size_t j = 0; j < Ny; ++j )
-	 {
-	    for( std::size_t i = 0; i < Nx; ++i )
-	    {
-	       _vec_unknown[count].make_independent(count);
-	       ++count;
-	       _vec_unknown[count].make_independent(count);
-	       ++count;
-	    }
-	 }
-      }
-   }
-
    std::size_t Dx;
    std::size_t Dy;
    std::size_t Dz;

@@ -198,33 +198,4 @@ struct PROPERTY
       ret = _pressure_1 - _pressure_2 - _spec_weight * _del_depth;
       return ret;
    }
-
-
-   // static double Find_Po ( double _Po, double _spec_weight, double _del_depth )
-   // {
-   //    ADscalar tmp_Po_1 =  _Po - _spec_weight * _del_depth;
-   //    // iterate
-   //    ADscalar tmp_Bo = Bo( tmp_Po_1 );
-   //    ADscalar tmp_density = Density_Oil( tmp_Bo );
-   //    ADscalar tmp_spec_weight = SpecificWeight( tmp_density );
-   //    double tmp_Po_2 = tmp_Po_1.value() - (_spec_weight + tmp_spec_weight.value() )/2.0 * _del_depth;
-   //    return tmp_Po_2;
-   // }
-
-   // static double Find_Pw ( double _Pw, double _spec_weight, double _del_depth )
-   // {
-   //    ADscalar tmp_Pw_1 =  _Pw - _spec_weight * _del_depth;
-
-   //    //std::cout << tmp_Pw_1 << std::endl;
-      
-   //    // iterate
-   //    ADscalar tmp_Bw = Bw( tmp_Pw_1 );
-   //    ADscalar tmp_density = Density_Wat( tmp_Bw );
-   //    ADscalar tmp_spec_weight = SpecificWeight( tmp_density );
-   //    double tmp_Pw_2 = tmp_Pw_1.value() - (_spec_weight + tmp_spec_weight.value() )/2.0 * _del_depth;
-
-   //    //std::cout << tmp_Pw_2 << std::endl;
-	    
-   //    return tmp_Pw_2;
-   // }
 };

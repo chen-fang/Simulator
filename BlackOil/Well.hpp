@@ -25,7 +25,7 @@ typedef adetl::ADvector   ADvector;
 //    }
 // };
 
-struct WellInfo
+class WellInfo
 {
 public:
    WellInfo ( std::size_t _i, std::size_t _j, std::size_t _k, double _rw,
@@ -74,11 +74,16 @@ public:
 	      double _dX, double _dY, double _Kx, double _Ky )
       : WellInfo( _i, _j, _k, _rw, _dX, _dY, _Kx, _Ky ),
 	m_bhp( _bhp )
-   {}
+   {
+      index_count++;
+      m_index = index_count;
+   }
 
+   static int index_count = -1;
    double BHP () const { return m_bhp;            }
   
 private:
+   int m_index;
    const double m_bhp;
 };
 
@@ -90,10 +95,15 @@ public:
 	      double _dX, double _dY, double _Kx, double _Ky )
       : WellInfo( _i, _j, _k, _rw, _dX, _dY, _Kx, _Ky ),
 	m_water_rate( _water_rate )
-   {}
+   {
+      index_count++;
+      m_index = index_count;
+   }
 
+   static int index_count = -1;
    double Rate () const  { return m_water_rate; }
    
 private:
+   int m_index;
    const double m_water_rate;
 };
