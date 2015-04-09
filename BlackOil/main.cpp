@@ -54,8 +54,15 @@ int main ()
 
    std::vector< double > negative_newton_update;
    std::vector< double > residual;
+
+   // int nRow = problem.GetVarNumber();
+   // int nCol = problem.GetVarNumber();
+   // int nNNZ = problem.GetVarNumber() * 8;
+   int nRow = problem.GetVarNumber() + problem.GetInjectorNumber();
+   int nCol = problem.GetVarNumber() + problem.GetInjectorNumber();
+   int nNNZ = problem.GetVarNumber() * 8 + problem.GetInjectorNumber();
    
-   CSR<> Jacobian( problem.GetVarNumber(), problem.GetVarNumber(), problem.GetVarNumber() * 8 );
+   CSR<> Jacobian( nRow, nCol, nNNZ );
 
    GENSOL :: Intel_Pardiso LSolver( Jacobian.nCol(), Jacobian.nNZV() );
 
@@ -63,7 +70,7 @@ int main ()
    double dT = 0.1;
    problem.Update_Accum_Old( dT );
 
-   const int MaxIteration = 100;
+   const int MaxIteration = 10;
    int count_iter = 0;
 
    // below is newton's iteration within one single time step
