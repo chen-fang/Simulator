@@ -6,7 +6,16 @@
 
 struct CentralProperty
 {
-   void Initialize ()
+   CentralProperty () : kro(0.0), krw(0.0),
+			bo(0.0), bw(0.0),
+			pw(0.0),
+			spec_weight_oil(0.0), spec_weight_wat(0.0),
+			viscosity_oil(0.0), viscosity_wat(0.0),
+			porosity(0.0)
+   {
+   }
+   
+   void Reset ()
    {
       kro = 0.0;
       krw = 0.0;
@@ -30,6 +39,11 @@ struct CentralProperty
 
 struct InterfcProperty
 {
+   InterfcProperty () : trans_constant_x( 0.0 ),
+			trans_constant_y( 0.0 ),
+			trans_constant_z( 0.0 )
+   {}
+			
    double trans_constant_x;
    double trans_constant_y;
    double trans_constant_z;
@@ -40,73 +54,62 @@ class DiscreteProblem
 {
 public:   
    DiscreteProblem();
-   void Initialize ( double _first_time_step );
 
-   void Update_Unknown ( const std::vector<double>& _negative_newton_update );
-   void Update_AllProperty    ();
+private: // for initialization & preparation
+   void Activate_Uold ();
+   void Initialize_K_interface (); 
+   void Add_Producer ( double _rate, std::size_t _i, std::size_t j, std::size_t k, double _rw = 0.5 );
+   void Add_Injector ( double _bhp,  std::size_t _i, std::size_t j, std::size_t k, double _rw = 0.5 );
+   
 
-   //void Update_Unknown ( const std::vector<double>& _negative_newton_update );
+public:  // for update
+   void Update_Uold ();                                                     // 1
+   void Update_Unew ( const std::vector<double>& _negative_newton_update ); // 2
+   void Update_Property    ();                                              // 3
+   void Update_Accum_Old ( double _time_step );                             // 4
+
+public:  // for evaluation
    
    template< typename VECTOR, typename CSR >
    void Evaluate ( double _time_step,
 		   CSR& _Jacobian, VECTOR& _vec_residual );
-
-private:
-   /* ********* Initiates the discretized problem ********* */
-   void     Initialize_Unknown ();
-   void     Initialize_K_interface ();
-
-   // Add a well with const BHP if tag == 0. Else, add a well with constant flow rate.
-   void     Add_Well ( int _tag, double _value,
-		       std::size_t _i, std::size_t _j, std::size_t _k, double _rw = 0.5 );
-   //void     Shut_Well( std::size_t _i, std::size_t _j, std::size_t _k );
-   //void     Change_Well_Mode ();
-
-
-   /* ********* Calculate properties according to unknown variables ********* */
-   void     Update_GridProperty   ( std::size_t _grid_number );
-
-
-
-   /* ********* Accumulation ********* */
-   //
+   
+private: // for evaluation
+   // Accumulation
    double   Accum_Constant ( double _time_step,
 			     double _del_x, double _del_y, double _del_z ) const;
-   //
+
    ADscalar Accum_Term     ( double _accum_constant,
 			     const ADscalar& _porosity,
 			     const ADscalar& _saturation,
 			     const ADscalar& _volume_factor ) const;
-   //
-   //void     Initialize_Accum      ( double _first_timp_step );
-   //
+
    void     Evaluate_Accumulation ( double _time_step );
 
-
-   /* ********* Flux ********* */
-   //
+   // Flux
    const CentralProperty& GetUpstream ( std::size_t _gdbk_left,
 					const ADscalar& _pressure_left,
 					std::size_t _gdbk_right,
 					const ADscalar& _pressure_right ) const;
-   //
+
    ADscalar Flux_Term ( const ADscalar& _transmissibility, const ADscalar& _potential) const;
-   //
    void     Evaluate_Flux ();  
  
-   /* ********* Well ********* */
-   //
-   ADscalar Well_Term ( double _WI, const ADscalar& _krm,
-			const ADscalar& _viscosity_m, const ADscalar& _bm,
-			const ADscalar& _Po, double _Pwf );
-   //
-   void     Evaluate_Well ();
+   // Source & Sink
 
-   
-   /* ********* Auxillary Functions ********* */
-   //
+   ADscalar Sink_Term ( const Producer& _producer, int _tag ); // for constant BHP wells ONLY
+   void     Evaluate_Source_Sink ();
+
+public:  // for access & information
+   int GetGridNumber () const;
+   int GetVarNumber  () const;
+
+   const ADvector& GetUold () const  { return mUold; }
+   const ADvector& GetUnew () const  { return mUnew; }
+
+private: // to help functionality
    void ClearCentralProperty ();
-   //
+
    std::size_t GetPoIndex( std::size_t _GridBlockIndex )                    const;
    std::size_t GetSwIndex( std::size_t _GridBlockIndex )                    const;
    std::size_t GetPoIndex( std::size_t _i, std::size_t _j, std::size_t _k ) const;
@@ -118,19 +121,18 @@ private:
    std::size_t                    VarNumber;
    ConnectionList                 CList;
 
-   std::vector< double >          vec_accum_oil_old;
-   std::vector< double >          vec_accum_wat_old;
-   ADvector                       vec_accum_oil;
-   ADvector                       vec_accum_wat;
-
    ConstProperty                  constprop;
    std::vector< CentralProperty > vec_centralprop;
    InterfcProperty                interfcprop;
+   
 
-   std::vector< Well_ConstRate >  vec_const_rate_well;
-   std::vector< Well_ConstBHP >   vec_const_bhp_well;
+   std::vector< double >          vec_accum_old;
+
+   std::vector< Injector >  vec_injector; // inject water @ constant rate
+   std::vector< Producer >  vec_producer; // produce both @ constant bhp
 		       
-   ADvector vec_unknown; // water saturation & oil pressure
+   ADvector mUnew; // water saturation & oil pressure
+   ADvector mUold;
    ADvector residual;
 
 public:
@@ -143,17 +145,18 @@ public:
 // ================================================================================
 // ================================================================================
 // ================================================================================
-DiscreteProblem :: DiscreteProblem ()
+DiscreteProblem :: DiscreteProblem () : grid( 200, 200, 25, 2, 1, 1 ), //20-30-3
+					GridNumber( grid.Nx * grid.Ny * grid.Nz ),
+					VarNumber ( 2 * GridNumber ),
+					CList( grid ),
+					vec_centralprop( GridNumber, CentralProperty() ),
+					interfcprop    (),
+					vec_accum_old  ( VarNumber, 0.0 ),
+					mUnew          ( VarNumber, 0.0 ),
+					mUold          ( VarNumber, 0.0 ),
+					residual       ( VarNumber, 0.0 )
 {
-   //grid.Set( 200, 200, 25, 20, 30, 3 );
-   grid.Set( 200, 200, 25, 1, 1, 1 );
-   
-   GridNumber = grid.Nx * grid.Ny * grid.Nz;
-   VarNumber  = 2 * GridNumber;
-   
-   CList.Initialize( grid );
-
-   interfcprop.trans_constant_x = PROPERTY::Trans_Constant( grid.Ny, grid.Nz, grid.Nx );
+   interfcprop.trans_constant_x = PROPERTY::Trans_Constant( grid.Dy, grid.Dz, grid.Dx );
    interfcprop.trans_constant_y = PROPERTY::Trans_Constant( grid.Nx, grid.Nz, grid.Ny );
    interfcprop.trans_constant_z = PROPERTY::Trans_Constant( grid.Nx, grid.Ny, grid.Nz );
  
@@ -161,61 +164,46 @@ DiscreteProblem :: DiscreteProblem ()
    constprop.Read_From_File( "3_layer_reservoir_properties/layer_2.txt" );
    constprop.Read_From_File( "3_layer_reservoir_properties/layer_3.txt" );
 
-   vec_accum_oil_old.resize ( GridNumber );
-   vec_accum_wat_old.resize ( GridNumber );
-   vec_accum_oil.resize     ( GridNumber );
-   vec_accum_wat.resize     ( GridNumber );
-   
-   vec_centralprop.resize( GridNumber );
-   for( std::size_t i = 0; i < GridNumber; ++i )
-   {
-      vec_centralprop[ i ].Initialize();
-   }
-   
-   vec_unknown.resize    ( VarNumber );
-   residual.resize       ( VarNumber );
+ 
+   // inject water with constant rate
+   //Add_Well_ConstRate( 1, -100, 6,  6,  2 );
+   //Add_Well_ConstRate( 1, -100, 17, 26, 2 );
+   Add_Injector( 10, 1, 0, 0 );
 
+   // producer with constant bottom pressure
+   // Add_Well_ConstBHP( 0, 3500, 5,  4,  0 );
+   // Add_Well_ConstBHP( 0, 3500, 16, 5,  0 );      
+   // Add_Well_ConstBHP( 0, 3500, 6,  23, 0 );
+   // Add_Well_ConstBHP( 0, 3500, 5,  21, 0 );
+   
+   Add_Producer( 3000, 0, 0, 0 );
+
+
+   Activate_Uold();
+   mUnew = mUold;
+   
    interfcprop.K_interface.resize( CList.Size );
-}
-
-void DiscreteProblem :: Initialize ( double _first_time_step )
-{
-   Initialize_Unknown();
    Initialize_K_interface();
-   Update_AllProperty();
-   //Initialize_Accum( _first_time_step );
-}
    
-template< typename VECTOR, typename CSR >
-void DiscreteProblem :: Evaluate ( double _time_step,
-				   CSR& _Jacobian, VECTOR& _vec_residual )
-{       
-   Update_AllProperty();
-   
-   Evaluate_Accumulation( _time_step );
-   //Evaluate_Flux();
-   // // Evaluate_Well();
-
-   residual.extract_CSR( _vec_residual,
-    			 _Jacobian.Row(), _Jacobian.Col(), _Jacobian.NZV() );
-   //Jacobian.Update_Status();
+   Update_Property();
 }
 
 
-void DiscreteProblem :: Initialize_Unknown()
+// --- ---
+void DiscreteProblem :: Activate_Uold()
 {
    // 1. Activation
-   grid.Activate_NaturalOrdering( vec_unknown );
+   grid.Activate_NaturalOrdering( mUold );
    // 2. Initialize Po and Sw
-   for( std::size_t i = 0; i < GridNumber; ++i )
+   for( int i = 0; i < GetGridNumber(); ++i )
    {
       const std::size_t PoIndex = GetPoIndex( i );
       const std::size_t SwIndex = GetSwIndex( i );
-      vec_unknown[ PoIndex ].value() = constprop.Poi.value();
-      vec_unknown[ SwIndex ].value() = constprop.Siw.value() + 0.1;
+      mUold[ PoIndex ].value() = constprop.Poi.value();
+      mUold[ SwIndex ].value() = constprop.Siw.value() + 0.25;
    }
 }
-
+// --- ---
 void DiscreteProblem :: Initialize_K_interface()
 {
    std::size_t count = 0;
@@ -243,113 +231,146 @@ void DiscreteProblem :: Initialize_K_interface()
 							      constprop.vec_Kz[ right_index ] );
    }
 }
-
-void DiscreteProblem :: Add_Well( int _tag, double _value,
-				  std::size_t _i, std::size_t _j, std::size_t _k, double _rw )
+// --- ---
+void DiscreteProblem :: Add_Injector ( double _rate,
+				       std::size_t _i, std::size_t _j, std::size_t _k, double _rw )
 {
-   // If tag == 0,
-   // -- constant BHP;
-   // Else
-   // -- constant flow rate.
-   std::size_t index = grid.GetGridBlockIndex( _i, _j, _k );
-   if ( _tag == 0 )
-   {
-      Well_ConstBHP well( _value,
-			  _i, _j, _k, _rw,
-			  grid.Dx, grid.Dy,
-			  constprop.vec_Kx[ index ],
-			  constprop.vec_Ky[ index ] );
-      vec_const_bhp_well.push_back( well );
-   }
-   else
-   {
-      Well_ConstRate well( _tag, _value,
-			   _i, _j, _k, _rw,
-			   grid.Dx, grid.Dy,
-			   constprop.vec_Kx[ index ],
-			   constprop.vec_Ky[ index ] );
-      vec_const_rate_well.push_back( well );
-   }
+   const std::size_t BlockIndex = grid.GetGridBlockIndex( _i, _j, _k );
+   Injector well( _rate, _i, _j, _k, _rw,
+		  grid.Dx, grid.Dy,
+		  constprop.vec_Kx[ BlockIndex ], constprop.vec_Ky[ BlockIndex ] );
+
+   vec_injector.push_back( well );
+}
+//
+void DiscreteProblem :: Add_Producer  ( double _bhp,
+					std::size_t _i, std::size_t _j, std::size_t _k, double _rw )
+{
+   std::size_t BlockIndex = grid.GetGridBlockIndex( _i, _j, _k );
+   Producer well( _bhp, _i, _j, _k, _rw,
+		  grid.Dx, grid.Dy,
+		  constprop.vec_Kx[ BlockIndex ], constprop.vec_Ky[ BlockIndex ] );
+   
+   vec_producer.push_back( well );
 }
 
-
-void DiscreteProblem :: Update_GridProperty( std::size_t _grid_number )
+//1
+void DiscreteProblem :: Update_Uold ()
 {
-   CentralProperty& prop = vec_centralprop[ _grid_number ];
-   
-   const std::size_t PoIndex = GetPoIndex( _grid_number );
-   const std::size_t SwIndex = GetSwIndex( _grid_number );
-   const ADscalar& _Po = vec_unknown[ PoIndex ];
-   const ADscalar& _Sw = vec_unknown[ SwIndex ];
-
-   ADscalar S_wd( 0.0 );
-   S_wd = PROPERTY::Swd( _Sw, constprop.Siw, constprop.Sor );
-
-   prop.kro = PROPERTY::Kro( S_wd );
-   prop.krw = PROPERTY::Krw( S_wd );
-	    
-   prop.pw = PROPERTY::Pw( _Po );
-
-   prop.bo = PROPERTY::Bo ( _Po, constprop.Bob, constprop.Co, constprop.Pb );
-   prop.bw = PROPERTY::Bw ( prop.pw, constprop.Bwb, constprop.Cw, constprop.Pb );
-   
-   ADscalar dens_o = PROPERTY::Density_Oil( prop.bo, constprop.DensOil_sc );
-   ADscalar dens_w = PROPERTY::Density_Wat( prop.bw, constprop.DensWat_sc );
-   
-   prop.spec_weight_oil = PROPERTY::SpecificWeight( dens_o );
-   prop.spec_weight_wat = PROPERTY::SpecificWeight( dens_w );
-   
-   prop.viscosity_oil = constprop.VisO;
-   prop.viscosity_wat = constprop.VisW;
-   
-   const double porosity_b = constprop.vec_porosity_b[ _grid_number ];
-   prop.porosity = PROPERTY::Porosity( _Po, porosity_b, constprop.Cr, constprop.Pb );
-
-   // std::cout << "---------------------------------------- "<< _grid_number << std::endl;
-   // std::cout << "****************"<< std::endl;
-   // std::cout << "Po =\t" << _Po.value() << std::endl;
-   // std::cout << "Sw =\t" << _Sw.value() << std::endl;
-   // std::cout << "Pw =\t" << prop.pw.value() << std::endl;   
-   // std::cout << "****************"<< std::endl;
-   // std::cout << "Kro =\t" << prop.kro.value() << std::endl;
-   // std::cout << "Krw =\t" << prop.krw.value() << std::endl;
-   // std::cout << "Bo =\t" << prop.bo.value() << std::endl;
-   // std::cout << "Bw =\t" << prop.bw.value() << std::endl;
-   // std::cout << "spwto =\t" << prop.spec_weight_oil.value() << std::endl;
-   // std::cout << "spwtw =\t" << prop.spec_weight_wat.value() << std::endl;
-   // std::cout << "viso =\t" << prop.viscosity_oil.value() << std::endl;
-   // std::cout << "visw =\t" << prop.viscosity_wat.value() << std::endl;
-   // std::cout << "poro_b =\t" << porosity_b << std::endl;
-   // std::cout << "poro =\t" << prop.porosity.value() << std::endl;
+   mUold = mUnew;
 }
-
-void DiscreteProblem :: Update_Unknown ( const std::vector<double>& _negative_newton_update )
+//2
+void DiscreteProblem :: Update_Unew ( const std::vector<double>& _negative_newton_update )
 {
-   for( std::size_t i = 0; i < VarNumber; ++i )
+   for( std::size_t i = 0; i < VarNumber; )
    {
-      //std::cout << "---------------------------------- "<< i << std::endl;
-      //std::cout << vec_unknown[i].value() << " --- --- ";
-      vec_unknown[i].value() -= _negative_newton_update[i];
-      //std::cout << vec_unknown[i].value() << std::endl;
+      // pressure
+      mUnew[i].value() -= _negative_newton_update[i];
+      ++i;
+      // water saturation
+      mUnew[i].value() -= _negative_newton_update[i];
+      ++i;
    }
 }
-
-void DiscreteProblem :: Update_AllProperty ()
+//3
+void DiscreteProblem :: Update_Property ()
 {
    for( std::size_t i = 0; i < GridNumber; ++i )
    {
-      Update_GridProperty( i );
+      CentralProperty&  prop = vec_centralprop[ i ];
+   
+      const std::size_t PoIndex = GetPoIndex( i );
+      const std::size_t SwIndex = GetSwIndex( i );
+      const ADscalar&  _Po = mUnew[ PoIndex ];
+      const ADscalar&  _Sw = mUnew[ SwIndex ];
+
+      ADscalar S_wd( 0.0 );
+      S_wd = PROPERTY::Swd( _Sw, constprop.Siw, constprop.Sor );
+
+      prop.kro = PROPERTY::Kro( S_wd );
+      prop.krw = PROPERTY::Krw( S_wd );
+	    
+      prop.pw = PROPERTY::Pw( _Po );
+
+      prop.bo = PROPERTY::Bo ( _Po, constprop.Bob, constprop.Co, constprop.Pb );
+      prop.bw = PROPERTY::Bw ( prop.pw, constprop.Bwb, constprop.Cw, constprop.Pb );
+   
+      ADscalar dens_o = PROPERTY::Density_Oil( prop.bo, constprop.DensOil_sc );
+      ADscalar dens_w = PROPERTY::Density_Wat( prop.bw, constprop.DensWat_sc );
+   
+      prop.spec_weight_oil = PROPERTY::SpecificWeight( dens_o );
+      prop.spec_weight_wat = PROPERTY::SpecificWeight( dens_w );
+   
+      prop.viscosity_oil = constprop.VisO;
+      prop.viscosity_wat = constprop.VisW;
+   
+      const double porosity_b = constprop.vec_porosity_b[ i ];
+      prop.porosity = PROPERTY::Porosity( _Po, porosity_b, constprop.Cr, constprop.Pb );
+
+      // std::cout << "---------------------------------------- "<< _grid_number << std::endl;
+      // std::cout << "****************"<< std::endl;
+      // std::cout << "Po =\t" << _Po.value() << std::endl;
+      // std::cout << "Sw =\t" << _Sw.value() << std::endl;
+      // std::cout << "Pw =\t" << prop.pw.value() << std::endl;   
+      // std::cout << "****************"<< std::endl;
+      // std::cout << "Kro =\t" << prop.kro.value() << std::endl;
+      // std::cout << "Krw =\t" << prop.krw.value() << std::endl;
+      // std::cout << "Bo =\t" << prop.bo.value() << std::endl;
+      // std::cout << "Bw =\t" << prop.bw.value() << std::endl;
+      // std::cout << "spwto =\t" << prop.spec_weight_oil.value() << std::endl;
+      // std::cout << "spwtw =\t" << prop.spec_weight_wat.value() << std::endl;
+      // std::cout << "viso =\t" << prop.viscosity_oil.value() << std::endl;
+      // std::cout << "visw =\t" << prop.viscosity_wat.value() << std::endl;
+      // std::cout << "poro_b =\t" << porosity_b << std::endl;
+      // std::cout << "poro =\t" << prop.porosity.value() << std::endl;
+   }
+}
+// 4
+void DiscreteProblem :: Update_Accum_Old ( double _time_step )
+{
+   std::cout << "Accum_Old Term Updated..." << std::endl;
+   const double accum_const = Accum_Constant( _time_step, grid.Dx, grid.Dy, grid.Dz );
+   for( int i = 0; i < GetGridNumber(); ++i )
+   {      
+      const CentralProperty& prop = vec_centralprop[ i ];
+      const std::size_t PoIndex = GetPoIndex( i );
+      const std::size_t SwIndex = GetSwIndex( i );
+
+      // oil phase
+      ADscalar So( 0.0 );
+      So = 1.0 - mUnew[ SwIndex ];
+      vec_accum_old[ PoIndex ] = accum_const * prop.porosity.value() * So.value() / prop.bo.value();
+
+      // water phase
+      const ADscalar& Sw = mUnew[ SwIndex ];
+      vec_accum_old[ SwIndex ] = accum_const * prop.porosity.value() * Sw.value() / prop.bw.value();
    }
 }
 
-// void Update_Unknown ( const std::vector<double>& _negative_newton_update )
-// {
-//    //std::size_t GridNumber = grid.GetGridBlockNumber();
-//    // for( std::size_t i = 0; i < 1; ++i )
-//    // {
-//    //    vec_unknown[i].value() -= _negative_newton_update[i];
-//    // }
-// }
+
+
+
+template< typename VECTOR, typename CSR >
+void DiscreteProblem :: Evaluate ( double _time_step,
+				   CSR& _Jacobian, VECTOR& _vec_residual )
+{
+   residual.resize( VarNumber, 0.0 );
+   Evaluate_Accumulation( _time_step );
+   Evaluate_Flux();
+   Evaluate_Source_Sink();
+
+   //std::cout << residual << std::endl;
+   
+   residual.extract_CSR( _vec_residual,
+    			 _Jacobian.Row(), _Jacobian.Col(), _Jacobian.NZV() );
+}
+
+
+
+
+
+
+
 // ================================================================== Accumulation
 // ================================================================== Accumulation
 // ================================================================== Accumulation
@@ -369,65 +390,50 @@ ADscalar DiscreteProblem :: Accum_Term ( double _accum_constant,
    ret = _accum_constant * ( _porosity * _saturation / _volume_factor );
    return ret;
 }
-// // --- ---
-// void DiscreteProblem :: Initialize_Accum ( double _time_step )
-// {
-//    const double accum_constant = Accum_Constant( _time_step, grid.Dx, grid.Dy, grid.Dz );
-//    for( std::size_t i = 0; i < GridNumber; ++i )
-//    {
-//       const CentralProperty& prop = vec_centralprop[ i ];
-//       const std::size_t SwIndex = GetSwIndex( i );	    
 
-//       vec_accum_oil[ i ] = Accum_Term( accum_constant,
-// 				       prop.porosity,
-// 				       1.0 - vec_unknown[ SwIndex ],
-// 				       prop.bo );
-//       vec_accum_wat[ i ] = Accum_Term( accum_constant,
-// 				       prop.porosity,
-// 				       vec_unknown[ SwIndex ],
-// 				       prop.bw );
-//    }
-// }
-// --- ---
 void DiscreteProblem :: Evaluate_Accumulation ( double _time_step )
 {
    const double accum_constant = Accum_Constant( _time_step, grid.Dx, grid.Dy, grid.Dz );
+
    for( std::size_t i = 0; i < GridNumber; ++i )
    {
-      std::cout << " ------------------------------ " << i << std::endl;
+      // std::cout << " ------------------------------ " << i << std::endl;
       // accumulate
       const CentralProperty& prop = vec_centralprop[ i ];
       const std::size_t PoIndex = GetPoIndex( i );
-      const std::size_t SwIndex = GetSwIndex( i );	    
+      const std::size_t SwIndex = GetSwIndex( i );
+
+      ADscalar accum_oil( 0.0 );
+      ADscalar accum_wat( 0.0 );
 
       // oil phase
-      ADscalar& accum_oil = vec_accum_oil[ i ];
       // 1. use old accumulation value;
-      accum_oil.make_constant();
-      residual[ PoIndex ] -= accum_oil;
+      residual[ PoIndex ] -= vec_accum_old[ PoIndex ];
 
       // 2. update oil accumulation term, which will become the "old" one in the next iterate
       accum_oil = Accum_Term( accum_constant,
       			      prop.porosity,
-      			      1.0 - vec_unknown[SwIndex],
+      			      1.0 - mUnew[SwIndex],
       			      prop.bo );
 
       // 3.
       residual[ PoIndex ] += accum_oil;
 
+      //std::cout << "accum_oil: " << accum_oil << std::endl;
+
       // water phase
-      ADscalar& accum_wat = vec_accum_wat[ i ];
       // 1.
-      accum_wat.make_constant();
-      residual[ SwIndex ] -= accum_wat;
+      residual[ SwIndex ] -= vec_accum_old[ SwIndex ];
       // 2.
       accum_wat = Accum_Term( accum_constant,
       			      prop.porosity,
-      			      vec_unknown[SwIndex],
+      			      mUnew[SwIndex],
       			      prop.bw );
       // 3.
       residual[ SwIndex ] += accum_wat;
 
+      //std::cout << "accum_wat: " << accum_wat << std::endl;
+      
       // std::cout << "--------------------------------------- " << i << std::endl;
       // std::cout << residual[PoIndex].value() << " --- --- " << residual[SwIndex].value() << std::endl;
    }
@@ -501,13 +507,13 @@ void DiscreteProblem :: Evaluate_Flux ()
       std::size_t SwIndex_R = GetSwIndex( right_gdbk );
       
       const CentralProperty& prop = GetUpstream( left_gdbk,
-						 vec_unknown[ PoIndex_L ],
+						 mUnew[ PoIndex_L ],
 						 right_gdbk,
-						 vec_unknown[ PoIndex_R ] );
+						 mUnew[ PoIndex_R ] );
 
       // oil
-      ADscalar potential_oil = PROPERTY::Potential   ( vec_unknown[ PoIndex_R ],
-						       vec_unknown[ PoIndex_L ],
+      ADscalar potential_oil = PROPERTY::Potential   ( mUnew[ PoIndex_R ],
+						       mUnew[ PoIndex_L ],
 						       prop.spec_weight_oil,
 						       del_depth );
       ADscalar trans_oil = PROPERTY::Transmissibility( K_inter,
@@ -530,13 +536,13 @@ void DiscreteProblem :: Evaluate_Flux ()
       ADscalar flux_oil = Flux_Term ( trans_oil, potential_oil );
       ADscalar flux_wat = Flux_Term ( trans_wat, potential_wat );
 
-      std::cout << "----------------------------------- "<< left_gdbk << " --- " << right_gdbk << std::endl;
-      // std::cout << "--- potential_water: "<< potential_wat.value() << std::endl;
-      // std::cout << "--- transmiss_water: "<< trans_wat.value() << std::endl;
-      // std::cout << "--- flux_water: "     << flux_wat.value() << std::endl;
-      // std::cout << "--- potential_oil: "<< potential_oil.value() << std::endl;
-      // std::cout << "--- transmiss_oil: "<< trans_oil.value() << std::endl;
-      // std::cout << "--- flux_oil: "     << flux_oil.value() << std::endl;
+      // std::cout << "----------------------------------- "<< left_gdbk << " --- " << right_gdbk << std::endl;
+      // std::cout << "potential_water: "<< potential_wat << std::endl;
+      // std::cout << "transmiss_water: "<< trans_wat << std::endl;
+      //std::cout << "flux_water: "     << flux_wat << std::endl;
+      //std::cout << "potential_oil: "<< potential_oil << std::endl;
+      //std::cout << "transmiss_oil: "<< trans_oil << std::endl;
+      //std::cout << "flux_oil: "     << flux_oil << std::endl;
       
       //std::cout << prop.viscosity_wat << std::endl;
       //std::cout << prop.krw << std::endl;      
@@ -547,6 +553,13 @@ void DiscreteProblem :: Evaluate_Flux ()
       residual[ PoIndex_R ] += flux_oil;
       residual[ SwIndex_L ] -= flux_wat;
       residual[ SwIndex_R ] += flux_wat;
+
+      // ADscalar left_block_oil = -flux_oil;
+      // ADscalar left_block_wat = -flux_wat;
+
+      // std::cout << "Left Oil: "<< left_block_oil << std::endl;
+      // std::cout << "Right Oil: "<< flux_oil << std::endl;
+
    }
 }
 
@@ -554,52 +567,61 @@ void DiscreteProblem :: Evaluate_Flux ()
 // ================================================================== Well
 // ================================================================== Well
 // ================================================================== Well
-// --- ---
-ADscalar DiscreteProblem :: Well_Term ( double _WI, const ADscalar& _krm,
-					const ADscalar& _viscosity_m, const ADscalar& _bm,
-					const ADscalar& _Po, double _Pwf )
+
+
+//
+ADscalar DiscreteProblem :: Sink_Term ( const Producer& _producer, int _tag )
 {
-   return _WI * _krm / ( _viscosity_m * _bm ) * ( _Po - _Pwf );
+   // oil rate ( _tag == 0 )
+   // wat rate ( _tag == 1 )
+   std::size_t i = _producer.I();
+   std::size_t j = _producer.J();
+   std::size_t k = _producer.K();
+
+   std::size_t BlockIndex = grid.GetGridBlockIndex( i, j, k );
+   std::size_t PoIndex    = GetPoIndex( BlockIndex );
+   const CentralProperty& prop = vec_centralprop[ BlockIndex ];
+   
+   ADscalar ret( 0.0 );
+   if( _tag == 0 )
+   {
+      ret = _producer.WI() * prop.kro / ( prop.viscosity_oil * prop.bo )
+	 * ( mUnew[ PoIndex ] - _producer.BHP() );
+   }
+   else
+   {
+      ret = _producer.WI() * prop.krw / ( prop.viscosity_wat * prop.bw )
+	 * ( mUnew[ PoIndex ] - _producer.BHP() );
+   }
+   return ret;
 }
 // --- ---
-void DiscreteProblem :: Evaluate_Well ()
+void DiscreteProblem :: Evaluate_Source_Sink ()
 {
-   // wells with constant rate
-   for( std::size_t i = 0; i < vec_const_rate_well.size(); ++i )
+   // source: water injection @ constant rate
+   for( std::size_t i = 0; i < vec_injector.size(); ++i )
    {
-      const Well_ConstRate& well = vec_const_rate_well[ i ];
-      const std::size_t gdbk_index = grid.GetGridBlockIndex( well.I(), well.J(), well.K() );
-      if( well.Tag() == 0 ) // const oil rate
-      {
-	 const std::size_t PoIndex = GetPoIndex( gdbk_index );
-	 residual[ PoIndex ] += well.Rate();
-      }
-      else if( well.Tag() == 1 ) // const water rate
-      {
-	 const std::size_t SwIndex = GetSwIndex( gdbk_index );
-	 residual[ SwIndex ] += well.Rate();
-      }
-      else // const total rate
-      {
-	 // skip for now
-      }
+      const Injector& well = vec_injector[ i ];
+      const std::size_t SwIndex = GetSwIndex( well.I(), well.J(), well.K() );      
+      
+      residual[ SwIndex ] -= well.Rate();
    }
-   // wells with constant pressure
-   for( std::size_t i = 0; i < vec_const_bhp_well.size(); ++i )
+   // sink: producing oil and water @ constant bhp
+   for( std::size_t i = 0; i < vec_producer.size(); ++i )
    {
-      const Well_ConstBHP& well = vec_const_bhp_well[ i ];
-      const std::size_t gdbk_index = grid.GetGridBlockIndex( well.I(), well.J(), well.K() );
-      const std::size_t PoIndex = GetPoIndex( gdbk_index );
-      const std::size_t SwIndex = GetSwIndex( gdbk_index );
-      const CentralProperty& prop = vec_centralprop[ gdbk_index ];
+      const Producer& well = vec_producer[ i ];
+      const std::size_t BlockIndex = grid.GetGridBlockIndex( well.I(), well.J(), well.K() );
+      const std::size_t PoIndex = GetPoIndex( BlockIndex );
+      const std::size_t SwIndex = GetSwIndex( BlockIndex );
       // oil
-      residual[ PoIndex ] += Well_Term( well.WI(), prop.kro,
-					prop.viscosity_oil, prop.bo,
-					vec_unknown[ PoIndex ], well.BHP() );
+      residual[ PoIndex ] += Sink_Term( well, 0 );
       // water
-      residual[ SwIndex ] += Well_Term( well.WI(), prop.krw,
-					prop.viscosity_wat, prop.bw,
-					vec_unknown[ PoIndex ], well.BHP() );
+      residual[ SwIndex ] += Sink_Term( well, 1 );
+
+      // std::cout << "WI: "<< well.WI() << std::endl;
+      // std::cout << "Re: "<< well.Re() << std::endl;
+      // std::cout << "Producer Oil: " << Sink_Term( well, 0 ) << std::endl;
+      // std::cout << "Producer2: " << Sink_Term( well, 1 ) << std::endl;
    }
 }
 
@@ -609,15 +631,7 @@ void DiscreteProblem :: ClearCentralProperty ()
 {
    for( std::size_t i = 0; i < vec_centralprop.size(); ++i )
    {
-      vec_centralprop[i].kro             = 0.0;
-      vec_centralprop[i].krw             = 0.0;
-      vec_centralprop[i].bo              = 0.0;
-      vec_centralprop[i].bw              = 0.0;
-      vec_centralprop[i].spec_weight_oil = 0.0;
-      vec_centralprop[i].spec_weight_wat = 0.0;
-      vec_centralprop[i].viscosity_oil   = 0.0;
-      vec_centralprop[i].viscosity_wat   = 0.0;
-      vec_centralprop[i].porosity        = 0.0;
+      vec_centralprop[i].Reset();
    }
 }
    
@@ -639,4 +653,14 @@ std::size_t DiscreteProblem :: GetPoIndex( std::size_t _i, std::size_t _j, std::
 std::size_t DiscreteProblem :: GetSwIndex( std::size_t _i, std::size_t _j, std::size_t _k ) const
 {
    return GetPoIndex( _i, _j, _k ) + 1;
+}
+
+int DiscreteProblem :: GetGridNumber () const
+{
+   return GridNumber;
+}
+
+int DiscreteProblem :: GetVarNumber () const
+{
+   return VarNumber;
 }
