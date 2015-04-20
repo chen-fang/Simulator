@@ -7,6 +7,7 @@
 
 namespace GENSOL {
 
+   template< int Transpose = 0 >
   class Intel_Pardiso
   {
   public:
@@ -38,7 +39,7 @@ namespace GENSOL {
       iparm[7]  = 2;        /* Maximum number of iterative refinement steps */
       iparm[9]  = 13;       /* Perturb the pivot elements with 1E-13 */
       iparm[10] = 1;        /* Use nonsymmetric permutation and scaling MPS */
-      iparm[11] = 0;        /* Do not solve transposed matrix*/
+      iparm[11] = Transpose;        /* Do not solve transposed matrix*/
       iparm[12] = 1;        /* Maximum weighted matching (default for nonsymmetric) */
       iparm[17] = 1;        /* No Output: Number of non-zero values in the factor LU */
       iparm[18] = 1;        /* No Output: Mflops for LU factorization */

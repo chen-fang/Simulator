@@ -13,7 +13,7 @@ struct Cartesian3D
 		 std::size_t _nx, std::size_t _ny, std::size_t _nz )
       : Dx(_dx), Dy(_dy), Dz(_dz), Nx(_nx), Ny(_ny), Nz(_nz)
    {
-      std::cout << "Cartesian 3D constructor" << std::endl;
+      // std::cout << "Cartesian 3D constructor" << std::endl;
    }
    
    void Set( std::size_t _dx, std::size_t _dy, std::size_t _dz,

@@ -198,4 +198,10 @@ struct PROPERTY
       ret = _pressure_1 - _pressure_2 - _spec_weight * _del_depth;
       return ret;
    }
+
+   static double Potential ( double _pressure_1, double _pressure_2,
+			     double _spec_weight, double _del_depth )
+   {
+      return ( _pressure_1 - _pressure_2 - _spec_weight * _del_depth );
+   }
 };

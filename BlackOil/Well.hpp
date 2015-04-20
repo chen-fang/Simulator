@@ -74,20 +74,16 @@ public:
 	      double _dX, double _dY, double _Kx, double _Ky )
       : WellInfo( _i, _j, _k, _rw, _dX, _dY, _Kx, _Ky ),
 	m_bhp( _bhp )
-   {
-      count_number++;
-      m_number = count_number;
-   }
+   {}
 
-  static int count_number;
-  int Number () const { return m_number; }
-  double BHP () const { return m_bhp;            }
-  
+   int& Number ()       { return m_number; }
+   int  Number () const { return m_number; }
+   double BHP  () const { return m_bhp;            }
+
 private:
    int m_number;
    const double m_bhp;
 };
-int Producer:: count_number = -1;
 
 class Injector : public WellInfo // injector with constant water rate
 {
@@ -97,18 +93,13 @@ public:
 	      double _dX, double _dY, double _Kx, double _Ky )
       : WellInfo( _i, _j, _k, _rw, _dX, _dY, _Kx, _Ky ),
 	m_water_rate( _water_rate )
-   {
-      count_number++;
-      m_number = count_number;
-   }
+   {}
 
-  static int count_number;
-  int Number () const { return m_number; }
+   int& Number ()        { return m_number; }
+   int  Number () const  { return m_number; }
    double Rate () const  { return m_water_rate; }
    
 private:
    int m_number;
    const double m_water_rate;
 };
-
-int Injector:: count_number = -1;

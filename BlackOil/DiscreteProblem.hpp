@@ -4,6 +4,7 @@
 #include "Gridding.hpp"
 #include "Well.hpp"
 
+
 struct CentralProperty
 {
    CentralProperty () : kro(0.0), krw(0.0),
@@ -48,26 +49,31 @@ struct InterfcProperty
 class DiscreteProblem
 {
 public:   
-   DiscreteProblem();
+   DiscreteProblem ();
+   DiscreteProblem ( const std::vector<double>& _data );
 
 private: // for initialization & preparation
+   void Add_Wells ();
    void Activate_Uold ();
+   void ActivateProblem ();
    void Initialize_K_interface (); 
    void Add_Producer ( double _rate, std::size_t _i, std::size_t j, std::size_t k, double _rw = 0.5 );
    void Add_Injector ( double _bhp,  std::size_t _i, std::size_t j, std::size_t k, double _rw = 0.5 );
    
 
 public:  // for update
+   void Activate_U ( const std::vector<double>& _data );
    void Update_Uold ();                                                     // 1
    void Update_Unew ( const std::vector<double>& _negative_newton_update ); // 2
    void Update_Property    ();                                              // 3
    void Update_Accum_Old ( double _time_step );                             // 4
 
-public:  // for evaluation
    
-   template< typename VECTOR, typename CSR >
-   void Evaluate ( double _time_step,
-		   CSR& _Jacobian, VECTOR& _vec_residual );
+public:
+   // for history matching
+   template< typename CSR >
+   void Get_Jacobian_Dm ( double _time_step, CSR& _Jacobian_Dm );
+
    
 private: // for evaluation
    // Accumulation
@@ -96,34 +102,71 @@ private: // for evaluation
    void     Evaluate_Source_Sink ();
 
 public:  // for access & information
+   const int GetNx               () const { return grid.Nx;          }
+   const int GetNy               () const { return grid.Ny;          }
+   const int GetNz               () const { return grid.Nz;          }
    const int GetGridNumber       () const { return GridNumber;       }
-   const int GetVarNumber        () const { return VarNumber; }
-   const int GetInjectorNumber   () const { return vec_injector.size();   }
+   const int GetBaseVarNumber    () const { return VarNumber_Base;   }
+   const int GetInjectorNumber   () const { return VarNumber_Added;  }
+   const int GetTotalVarNumber   () const { return VarNumber_Total;  }
 
    const ADvector& GetUold () const  { return mUold; }
    const ADvector& GetUnew () const  { return mUnew; }
+   ADscalar GetQ ( const Producer& _producer, int _tag )
+   {
+      ADscalar tmp( 0.0 );
+      tmp = Sink_Term( _producer, _tag );
+      return tmp;
+   }
+
+   const std::vector< Injector >& GetInjector () const   { return vec_injector; }
+   const std::vector< Producer >& GetProducer () const   { return vec_producer; }
+
+   const ConstProperty&   GetConstProperty ()    const   { return constprop;    }
+   const InterfcProperty& GetInterfcProperty ()  const   { return interfcprop;  }
+   const std::vector< CentralProperty >& GetCentralProperty () const { return vec_centralprop; }
 
 private: // to help functionality
    void ClearCentralProperty ();
 
+public:
    const std::size_t GetPoIndex( std::size_t _GridBlockIndex )                    const;
    const std::size_t GetSwIndex( std::size_t _GridBlockIndex )                    const;
    const std::size_t GetPoIndex( std::size_t _i, std::size_t _j, std::size_t _k ) const;
    const std::size_t GetSwIndex( std::size_t _i, std::size_t _j, std::size_t _k ) const;
+   const std::size_t GetGBIndex( std::size_t _i, std::size_t _j, std::size_t _k ) const;
 
    const std::size_t GetBHPIndex( int _injector_number      )                     const;
+
+
+public:  // for evaluation  
+   template< typename VECTOR, typename CSR >
+   void Evaluate ( double _time_step,
+		   CSR& _Jacobian, VECTOR& _vec_residual );
+
+private:
+   // to assist Get_Jacobian_Dm
+   void Get_Dm ( std::size_t _GBIndex_Central, std::size_t _GBIndex_Other,
+		 double _trans_constant, int _is_Zdirection, const std::vector<double>& _vec_K,
+		 double& _DO, double & _DW );
+
+   int GetKxColIndex( std::size_t _Kx_GBIndex ) const;
+   int GetKyColIndex( std::size_t _Ky_GBIndex ) const;
+   int GetKzColIndex( std::size_t _Kz_GBIndex ) const;
+   int GetPSColIndex( std::size_t _ps_GBIndex ) const; // porosity
 
 private:
    Cartesian3D                    grid;
    const int                      GridNumber;
-   const int                      VarNumber;
+   const int                      VarNumber_Base;
+   int                            VarNumber_Added;
+   int                            VarNumber_Total;
    ConnectionList                 CList;
 
    ConstProperty                  constprop;
    std::vector< CentralProperty > vec_centralprop;
    InterfcProperty                interfcprop;
    
-
    std::vector< double >          vec_accum_old;
 
    std::vector< Injector >  vec_injector; // inject water @ constant rate
@@ -143,16 +186,18 @@ public:
 // ================================================================================
 // ================================================================================
 // ================================================================================
-DiscreteProblem :: DiscreteProblem () : grid( 200, 200, 25, 2, 1, 1 ), //20-30-3
+DiscreteProblem :: DiscreteProblem () : grid( 200, 200, 25, 10, 1, 1 ), //20-30-3
 					GridNumber      ( grid.Nx * grid.Ny * grid.Nz ),
-					VarNumber       ( 2 * GridNumber ),
+					VarNumber_Base  ( 2 * GridNumber ),
+					VarNumber_Added ( 0 ),
+					VarNumber_Total ( VarNumber_Base ),
 					CList           ( grid ),
 					vec_centralprop ( GridNumber, CentralProperty() ),
 					interfcprop     (),
-					vec_accum_old   ( VarNumber, 0.0 ),
-					mUnew           ( VarNumber, 0.0 ),
-					mUold           ( VarNumber, 0.0 ),
-					residual        ( VarNumber, 0.0 )
+					vec_accum_old   ( VarNumber_Base, 0.0 ),
+					mUnew           ( VarNumber_Base, 0.0 ),
+					mUold           ( VarNumber_Base, 0.0 ),
+					residual        ( VarNumber_Base, 0.0 )
 {
    interfcprop.trans_constant_x = PROPERTY::Trans_Constant( grid.Dy, grid.Dz, grid.Dx );
    interfcprop.trans_constant_y = PROPERTY::Trans_Constant( grid.Nx, grid.Nz, grid.Ny );
@@ -162,7 +207,52 @@ DiscreteProblem :: DiscreteProblem () : grid( 200, 200, 25, 2, 1, 1 ), //20-30-3
    constprop.Read_From_File( "3_layer_reservoir_properties/layer_2.txt" );
    constprop.Read_From_File( "3_layer_reservoir_properties/layer_3.txt" );
 
+   interfcprop.K_interface.resize( CList.Size );
+   Initialize_K_interface();
+
+   Add_Wells();
+
+   Activate_Uold();
+   mUnew = mUold;
+   
+   Update_Property();
+}
+
+DiscreteProblem :: DiscreteProblem ( const std::vector<double>& _data )
+   : grid( 200, 200, 25, 10, 1, 1 ), //20-30-3
+     GridNumber      ( grid.Nx * grid.Ny * grid.Nz ),
+     VarNumber_Base  ( 2 * GridNumber ),
+     VarNumber_Added ( 0 ),
+     VarNumber_Total ( VarNumber_Base ),
+     CList           ( grid ),
+     vec_centralprop ( GridNumber, CentralProperty() ),
+     interfcprop     (),
+     vec_accum_old   ( VarNumber_Base, 0.0 ),
+     mUnew           ( VarNumber_Base, 0.0 ),
+     mUold           ( VarNumber_Base, 0.0 ),
+     residual        ( VarNumber_Base, 0.0 )
+{
+   interfcprop.trans_constant_x = PROPERTY::Trans_Constant( grid.Dy, grid.Dz, grid.Dx );
+   interfcprop.trans_constant_y = PROPERTY::Trans_Constant( grid.Nx, grid.Nz, grid.Ny );
+   interfcprop.trans_constant_z = PROPERTY::Trans_Constant( grid.Nx, grid.Ny, grid.Nz );
  
+   constprop.Read_From_File( "3_layer_reservoir_properties/layer_1.txt" );
+   constprop.Read_From_File( "3_layer_reservoir_properties/layer_2.txt" );
+   constprop.Read_From_File( "3_layer_reservoir_properties/layer_3.txt" );
+
+   interfcprop.K_interface.resize( CList.Size );
+   Initialize_K_interface();
+
+   Add_Wells();
+      
+   Activate_U( _data );
+   mUnew = mUold;
+   Update_Property();
+}     
+
+// --- ---
+void DiscreteProblem :: Add_Wells()
+{
    // inject water with constant rate
    // Add_Injector( -100, 6,  6,  2 );
    // Add_Injector( -100, 17, 26, 2 );
@@ -175,19 +265,10 @@ DiscreteProblem :: DiscreteProblem () : grid( 200, 200, 25, 2, 1, 1 ), //20-30-3
    // Add_Producer( 800, 6,  23, 0 );
    // Add_Producer( 800, 5,  21, 0 );
 
-   Add_Injector( -100, 0, 0, 0 );
-   //Add_Producer( 800, 0, 0, 0 );
-   
-   Activate_Uold();
-   mUnew = mUold;
-   
-   interfcprop.K_interface.resize( CList.Size );
-   Initialize_K_interface();
-  
-   Update_Property();
+   Add_Injector( -200, 0, 0, 0 );
+   Add_Producer( 800,  9, 0, 0 );
+
 }
-
-
 // --- ---
 void DiscreteProblem :: Activate_Uold()
 {
@@ -203,14 +284,40 @@ void DiscreteProblem :: Activate_Uold()
       mUold[ SwIndex ].make_independent( SwIndex );
    }
    // 2. Initialize BHP as unknowns
-   for( int i = 0; i < GetInjectorNumber(); ++i )
+   for( int i = VarNumber_Base; i < VarNumber_Total; ++i )
    {
-      int InjectorIndex = i + VarNumber;
-      mUold[ InjectorIndex ].value() = constprop.Poi.value();
-      mUold[ InjectorIndex ].make_independent( InjectorIndex );
+      mUold[ i ].value() = constprop.Poi.value();
+      mUold[ i ].make_independent( i );
 
-      std::cout << "Initializing BHP at " << InjectorIndex << std::endl;
-      std::cout << "Initializing BHP's value: " << mUold[ InjectorIndex ].value() << std::endl;
+      // std::cout << "Initializing BHP at " << i << std::endl;
+      // std::cout << "Initializing BHP's value: " << mUold[ i ].value() << std::endl;
+   }
+}
+// --- ---
+void DiscreteProblem :: Activate_U ( const std::vector<double>& _data )
+{
+   mUold.clear();
+   mUold.resize( _data.size(), 0.0 );
+   
+   // 1. Initialize Po and Sw
+   for( int i = 0; i < VarNumber_Base; )
+   {
+      mUold[ i ].value() = _data[ i ];
+      mUold[ i ].make_independent( i );
+      i++;
+      
+      mUold[ i ].value() = _data[ i ];
+      mUold[ i ].make_independent( i );
+      i++;
+   }
+   // 2. Initialize BHP as unknowns
+   for( int i = VarNumber_Base; i < VarNumber_Total; ++i )
+   {
+      mUold[ i ].value() = _data[ i ];
+      mUold[ i ].make_independent( i );
+
+      // std::cout << "Initial BHP at " << i << std::endl;
+      // std::cout << "Initial BHP's value changes to: " << mUold[ i ].value() << std::endl;
    }
 }
 // --- ---
@@ -250,14 +357,19 @@ void DiscreteProblem :: Add_Injector ( double _rate,
 		  grid.Dx, grid.Dy,
 		  constprop.vec_Kx[ BlockIndex ], constprop.vec_Ky[ BlockIndex ] );
 
+   well.Number() = vec_injector.size();
    vec_injector.push_back( well );
    // expand
+   VarNumber_Added++;
+   VarNumber_Total++;
+   
    ADscalar tmp( 0.0 );
    mUold.push_back( tmp );
    residual.push_back( tmp );
 
-   std::cout << "mUold expanded to size: " << mUold.size() << std::endl;
-   std::cout << "residual expanded to size: " << residual.size() << std::endl;   
+   // std::cout << "mUold expanded to size: " << mUold.size() << std::endl;
+   // std::cout << "residual expanded to size: " << residual.size() << std::endl; 
+   
 }
 //
 void DiscreteProblem :: Add_Producer  ( double _bhp,
@@ -267,7 +379,8 @@ void DiscreteProblem :: Add_Producer  ( double _bhp,
    Producer well( _bhp, _i, _j, _k, _rw,
 		  grid.Dx, grid.Dy,
 		  constprop.vec_Kx[ BlockIndex ], constprop.vec_Ky[ BlockIndex ] );
-   
+
+   well.Number() = vec_producer.size();
    vec_producer.push_back( well );
 }
 
@@ -279,9 +392,7 @@ void DiscreteProblem :: Update_Uold ()
 //2
 void DiscreteProblem :: Update_Unew ( const std::vector<double>& _negative_newton_update )
 {
-  const int TotalVarNumber = VarNumber + GetInjectorNumber();
-  //const int TotalVarNumber = VarNumber;
-  for( int i = 0; i < TotalVarNumber; ++i )
+  for( int i = 0; i < VarNumber_Total; ++i )
    {
       mUnew[i].value() -= _negative_newton_update[i];
    }
@@ -342,9 +453,9 @@ void DiscreteProblem :: Update_Property ()
 // 4
 void DiscreteProblem :: Update_Accum_Old ( double _time_step )
 {
-   std::cout << "Accum_Old Term Updated..." << std::endl;
+   //std::cout << "Accum_Old Term Updated..." << std::endl;
    const double accum_const = Accum_Constant( _time_step, grid.Dx, grid.Dy, grid.Dz );
-   for( int i = 0; i < GetGridNumber(); ++i )
+   for( int i = 0; i < GridNumber; ++i )
    {      
       const CentralProperty& prop = vec_centralprop[ i ];
       const std::size_t PoIndex = GetPoIndex( i );
@@ -364,23 +475,19 @@ void DiscreteProblem :: Update_Accum_Old ( double _time_step )
 
 
 
+
 template< typename VECTOR, typename CSR >
 void DiscreteProblem :: Evaluate ( double _time_step,
 				   CSR& _Jacobian, VECTOR& _vec_residual )
 {
-   residual.resize( VarNumber + GetInjectorNumber(), 0.0 );
+   residual.resize( VarNumber_Total, 0.0 );
    Evaluate_Accumulation( _time_step );
    Evaluate_Flux();
    Evaluate_Source_Sink();
-
-   //std::cout << residual << std::endl;
    
    residual.extract_CSR( _vec_residual,
     			 _Jacobian.Row(), _Jacobian.Col(), _Jacobian.NZV() );
 }
-
-
-
 
 
 
@@ -595,17 +702,17 @@ ADscalar DiscreteProblem :: BHP_Residual ( const Injector& _injector )
    const CentralProperty& prop = vec_centralprop[ BlockIndex ];
 
    // for water injector, make Krw = Krw( 1-Sor )
-   ADscalar Sw = mUnew[ SwIndex ];
+   ADscalar Sw( 0.0 );
+   Sw = mUnew[ SwIndex ];
    Sw.value() = ( 1.0 - constprop.Sor ).value();
    ADscalar Swd( 0.0 );
    Swd = PROPERTY :: Swd( Sw, constprop.Siw, constprop.Sor );
    ADscalar krw_inj( 0.0 );
    krw_inj = PROPERTY :: Krw( Swd );
-   
+
    ADscalar ret( 0.0 );
    ret = _injector.WI() * krw_inj / ( prop.viscosity_wat * prop.bw )
      * ( mUnew[ PoIndex ] - mUnew[ BHPIndex ] ) - _injector.Rate();
-
 
    // std::cout << "Evaluating BHP Residual -------------------" << std::endl;
    // std::cout << "Swd: " << Swd << std::endl;
@@ -614,7 +721,7 @@ ADscalar DiscreteProblem :: BHP_Residual ( const Injector& _injector )
    // std::cout << "bw:  " << prop.viscosity_wat << std::endl;
    // std::cout << "Po:  " << mUnew[ PoIndex ] << std::endl;
    // std::cout << "BHP: " << mUnew[ BHPIndex ] << std::endl;
-   std::cout << "Rate: " << _injector.Rate() << std::endl;
+   // std::cout << "Rate: " << _injector.Rate() << std::endl;
    // std::cout << "R:   " << ret << std::endl;
      
    return ret;
@@ -649,17 +756,18 @@ ADscalar DiscreteProblem :: Sink_Term ( const Producer& _producer, int _tag )
 void DiscreteProblem :: Evaluate_Source_Sink ()
 {
    // source: water injection @ constant rate
-   for( std::size_t i = 0; i < vec_injector.size(); ++i )
+   for( int i = 0; i < VarNumber_Added; ++i )
    {
-     // 1. Add constant rate to residual equation
-     const Injector& well = vec_injector[ i ];
-     const std::size_t SwIndex = GetSwIndex( well.I(), well.J(), well.K() );      
+      // 1. Add constant rate to residual equation
+      const Injector& well = vec_injector[ i ];
+      const std::size_t SwIndex = GetSwIndex( well.I(), well.J(), well.K() );      
       residual[ SwIndex ] += well.Rate();
-      
+
       // 2. Form new residual equation
       const std::size_t BHPIndex = GetBHPIndex( i );
       residual[ BHPIndex ] = BHP_Residual( vec_injector[i] );
    }
+
    // sink: producing oil and water @ constant bhp
    for( std::size_t i = 0; i < vec_producer.size(); ++i )
    {
@@ -709,7 +817,337 @@ const std::size_t DiscreteProblem :: GetSwIndex( std::size_t _i, std::size_t _j,
    return GetPoIndex( _i, _j, _k ) + 1;
 }
 
+const std::size_t DiscreteProblem :: GetGBIndex( std::size_t _i, std::size_t _j, std::size_t _k ) const
+{
+   return grid.GetGridBlockIndex( _i, _j, _k );
+}
+
 const std::size_t DiscreteProblem :: GetBHPIndex( int _injector_number ) const
 {
-  return _injector_number + VarNumber;
+  return _injector_number + VarNumber_Base;
+}
+
+
+
+void DiscreteProblem :: Get_Dm ( std::size_t _GBIndex_Central, std::size_t _GBIndex_Other, // location
+				 double _trans_constant, int _is_Zdirection, // direction related
+				 const std::vector<double>& _vec_K,
+				 double& _DO, double & _DW ) // result
+{
+   std::size_t PoIndex_C = GetPoIndex( _GBIndex_Central );
+   std::size_t PoIndex_O = GetPoIndex( _GBIndex_Other );
+
+   const CentralProperty& prop = GetUpstream( _GBIndex_Central,
+					      mUnew[ PoIndex_C ],
+					      _GBIndex_Other,
+					      mUnew[ PoIndex_O ] );
+	       
+   double PO = PROPERTY ::Potential( mUnew[ PoIndex_C ].value(),
+				     mUnew[ PoIndex_O ].value(),
+				     prop.spec_weight_oil.value(),
+				     grid.Dz * _is_Zdirection );
+
+   double PW = PROPERTY :: Potential( mUnew[ PoIndex_C ].value(),
+				      mUnew[ PoIndex_O ].value(),
+				      prop.spec_weight_wat.value(),
+				      grid.Dz * _is_Zdirection );
+
+   double MO = prop.kro.value() / ( prop.viscosity_oil.value() * prop.bo.value() );
+   double MW = prop.krw.value() / ( prop.viscosity_wat.value() * prop.bw.value() );
+
+   double K_C = _vec_K[ _GBIndex_Central ];
+   double K_O = _vec_K[ _GBIndex_Other   ];
+
+   double K_Sum = K_C + K_O;
+   double K_Term = 2 * K_C * K_C * K_O / ( K_Sum * K_Sum );
+	       
+   _DO = PO * _trans_constant * MO * K_Term;
+   _DW = PW * _trans_constant * MW * K_Term;
+}
+
+template< typename CSR >
+void DiscreteProblem ::Get_Jacobian_Dm ( double _time_step, CSR& _Jacobian_Dm )
+{
+   int track_nzv(0);
+   _Jacobian_Dm.Row().clear();
+   _Jacobian_Dm.Col().clear();
+   _Jacobian_Dm.NZV().clear();
+   
+   std::size_t GBIndex_C(0);
+   std::size_t GBIndex_IL(0);
+   std::size_t GBIndex_IR(0); 
+   std::size_t GBIndex_JL(0); 
+   std::size_t GBIndex_JR(0); 
+   std::size_t GBIndex_KL(0); 
+   std::size_t GBIndex_KR(0); 
+   
+   for( std::size_t k = 0; k < grid.Nz; ++k )
+   {
+      for( std::size_t j = 0; j < grid.Ny; ++j )
+      {
+	 for( std::size_t i = 0; i < grid.Nx; ++i )
+	 {
+	    // 1. Ln( Kx ) ++++++++++++++++++++++++++++++++++++++++++++
+	    
+	    // Indicator
+	    bool IL = false, IR = false;
+	    bool JL = false, JR = false;
+	    bool KL = false, KR = false;
+
+	    // Absoluate Permeability
+	    double K_Cx, K_Cy, K_Cz;
+	    double K_IL(0.0), K_IR(0.0);
+	    double K_JL(0.0), K_JR(0.0);
+	    double K_KL(0.0), K_KR(0.0);
+
+	    // Derivatives   
+	    double DO_Cx, DO_Cy, DO_Cz;
+	    double DO_IL(0.0), DO_IR(0.0); // partial derivative ( oil equation )
+	    double DO_JL(0.0), DO_JR(0.0);
+	    double DO_KL(0.0), DO_KR(0.0);
+	    double DW_Cx, DW_Cy, DW_Cz;
+	    double DW_IL(0.0), DW_IR(0.0); // partial derivative ( wat equation )
+	    double DW_JL(0.0), DW_JR(0.0);
+	    double DW_KL(0.0), DW_KR(0.0);
+	    
+	    GBIndex_C = GetGBIndex( i, j, k );
+	    K_Cx = constprop.vec_Kx[ GBIndex_C ];
+	    K_Cy = constprop.vec_Ky[ GBIndex_C ];
+	    K_Cz = constprop.vec_Kz[ GBIndex_C ];
+
+	    // i-1
+	    if( i != 0 )
+	    {
+	       IL = true;
+	       GBIndex_IL = GetGBIndex( i-1, j, k );
+	       K_IL = constprop.vec_Kx[ GBIndex_IL ];
+	       Get_Dm( GBIndex_C, GBIndex_IL,
+		       interfcprop.trans_constant_x, 0, constprop.vec_Kx,
+		       DO_IL, DW_IL );
+	    }
+	    
+	    // i+1
+	    if( i != grid.Nx-1 )
+	    {
+	       IR = true;
+	       GBIndex_IR = GetGBIndex( i+1, j, k );
+	       K_IR = constprop.vec_Kx[ GBIndex_IR ];
+	       Get_Dm( GBIndex_C, GBIndex_IR,
+		       interfcprop.trans_constant_x, 0, constprop.vec_Kx,
+		       DO_IR, DW_IR );
+	    }
+	    // j-1
+	    if( j != 0 )
+	    {
+	       JL = true;
+	       GBIndex_JL = GetGBIndex( i, j-1, k );
+	       K_JL = constprop.vec_Ky[ GBIndex_JL ];
+	       Get_Dm( GBIndex_C, GBIndex_JL,
+		       interfcprop.trans_constant_y, 0, constprop.vec_Ky,
+		       DO_JL, DW_JL );
+	    }
+
+	    // j+1
+	    if( j != grid.Ny-1 )
+	    {
+	       JR = true;
+	       GBIndex_JR = GetGBIndex( i, j+1, k );
+	       K_JR = constprop.vec_Ky[ GBIndex_JR ];
+	       Get_Dm( GBIndex_C, GBIndex_JR,
+		       interfcprop.trans_constant_y, 0, constprop.vec_Ky,
+		       DO_JR, DW_JR );
+	    }
+	    
+	    // k-1
+	    if( k != 0 )
+	    {
+	       KL = true;
+	       GBIndex_KL = GetGBIndex( i, j, k-1 );
+	       K_KL = constprop.vec_Kz[ GBIndex_KL ];
+	       Get_Dm( GBIndex_C, GBIndex_KL,
+		       interfcprop.trans_constant_z, 1, constprop.vec_Kz,
+		       DO_KL, DW_KL );
+	    }
+
+	    // k+1
+	    if( k != grid.Nz-1 )
+	    {
+	       KR = true;
+	       GBIndex_KR = GetGBIndex( i, j, k+1 );
+	       K_KR = constprop.vec_Kz[ GBIndex_KR ];
+	       Get_Dm( GBIndex_C, GBIndex_KR,
+		       interfcprop.trans_constant_z, 1, constprop.vec_Kz,
+		       DO_KR, DW_KR );
+	    }
+
+	    // i,j,k --> Central
+	    DO_Cx = ( DO_IL * K_IL + DO_IR * K_IR ) / K_Cx;
+	    DO_Cy = ( DO_JL * K_JL + DO_JR * K_JR ) / K_Cy;
+	    DO_Cz = ( DO_KL * K_KL + DO_KR * K_KR ) / K_Cz;
+
+	    DW_Cx = ( DW_IL * K_IL + DW_IR * K_IR ) / K_Cx;
+   	    DW_Cy = ( DW_JL * K_JL + DW_JR * K_JR ) / K_Cy;
+	    DW_Cz = ( DW_KL * K_KL + DW_KR * K_KR ) / K_Cz;
+
+	    // 2. porosity ++++++++++++++++++++++++++++++++++++++++++++
+	    double accum_const = Accum_Constant( _time_step, grid.Dx, grid.Dy, grid.Dz );
+	    const CentralProperty& prop = vec_centralprop[ GBIndex_C ];
+	    std::size_t SwIndex_C = GetSwIndex( GBIndex_C );
+	    double Sw_C = mUnew[ SwIndex_C ].value();
+	    double So_C = 1.0 - Sw_C;
+	    // derivatives w.r.t porosity
+	    double DOp = accum_const * prop.porosity.value() * So_C / prop.bo.value();
+	    double DWp = accum_const * prop.porosity.value() * Sw_C / prop.bw.value();
+
+	    
+	    // 3. place derivatives +++++++++++++++++++++++++++++++++++++++++++++++++++
+	    std::vector<int> tmp_wat_placement_col;
+	    std::vector<double> tmp_wat_placement_nzv;
+	    // 3.1 oil equation w.r.t Ln(k)
+	    _Jacobian_Dm.Row().push_back( track_nzv );
+	    if( true == KL ) // k-1, o
+	    {
+	       int KL_ColIndex = GetKzColIndex( GBIndex_KL );
+	       _Jacobian_Dm.Col().push_back( KL_ColIndex );
+	       _Jacobian_Dm.NZV().push_back( DO_KL );
+	       track_nzv++;
+	       
+	       tmp_wat_placement_col.push_back( KL_ColIndex );
+	       tmp_wat_placement_nzv.push_back( DW_KL );
+	    }
+	    if( true == JL ) // j-1, o
+	    {
+	       int JL_ColIndex = GetKyColIndex( GBIndex_JL );
+	       _Jacobian_Dm.Col().push_back( JL_ColIndex );
+	       _Jacobian_Dm.NZV().push_back( DO_JL );
+	       track_nzv++;
+
+	       tmp_wat_placement_col.push_back( JL_ColIndex );
+	       tmp_wat_placement_nzv.push_back( DW_JL );	       
+	    }
+	    if( true == IL ) // i-1, o
+	    {
+	       int IL_ColIndex = GetKxColIndex( GBIndex_IL );
+	       _Jacobian_Dm.Col().push_back( IL_ColIndex );
+	       _Jacobian_Dm.NZV().push_back( DO_IL );
+	       track_nzv++;
+
+	       tmp_wat_placement_col.push_back( IL_ColIndex );
+	       tmp_wat_placement_nzv.push_back( DW_IL );	       	       
+	    }
+	    if( true ) // central, o
+	    {
+	       // central-kx
+	       int Cx_ColIndex = GetKxColIndex( GBIndex_C );
+	       _Jacobian_Dm.Col().push_back( Cx_ColIndex );
+	       _Jacobian_Dm.NZV().push_back( DO_Cx );
+	       track_nzv++;
+
+	       tmp_wat_placement_col.push_back( Cx_ColIndex );
+	       tmp_wat_placement_nzv.push_back( DW_Cx );
+	       
+	       // central-ky
+	       int Cy_ColIndex = GetKyColIndex( GBIndex_C );
+	       _Jacobian_Dm.Col().push_back( Cy_ColIndex );
+	       _Jacobian_Dm.NZV().push_back( DO_Cy );
+	       track_nzv++;
+
+	       tmp_wat_placement_col.push_back( Cy_ColIndex );
+	       tmp_wat_placement_nzv.push_back( DW_Cy );
+	       
+	       // central-kz
+	       int Cz_ColIndex = GetKzColIndex( GBIndex_C );
+	       _Jacobian_Dm.Col().push_back( Cz_ColIndex );
+	       _Jacobian_Dm.NZV().push_back( DO_Cz );
+	       track_nzv++;
+
+	       tmp_wat_placement_col.push_back( Cz_ColIndex );
+	       tmp_wat_placement_nzv.push_back( DW_Cz );
+	    }
+	    
+	    if( true == IR ) // i+1, o
+	    {
+	       int IR_ColIndex = GetKxColIndex( GBIndex_IR );
+	       _Jacobian_Dm.Col().push_back( IR_ColIndex );
+	       _Jacobian_Dm.NZV().push_back( DO_IR );
+	       track_nzv++;
+
+	       tmp_wat_placement_col.push_back( IR_ColIndex );
+	       tmp_wat_placement_nzv.push_back( DW_IR );
+	    }
+	    if( true == JR ) // j+1, o
+	    {
+	       int JR_ColIndex = GetKyColIndex( GBIndex_JR );
+	       _Jacobian_Dm.Col().push_back( JR_ColIndex );
+	       _Jacobian_Dm.NZV().push_back( DO_JR );
+	       track_nzv++;
+
+	       tmp_wat_placement_col.push_back( JR_ColIndex );
+	       tmp_wat_placement_nzv.push_back( DW_JR );
+	    }
+
+	    if( true == KR ) // k+1, o
+	    {
+	       int KR_ColIndex = GetKzColIndex( GBIndex_KR );
+	      
+	       _Jacobian_Dm.Col().push_back( KR_ColIndex );
+	       _Jacobian_Dm.NZV().push_back( DO_KR );
+	       track_nzv++;
+
+	       tmp_wat_placement_col.push_back( KR_ColIndex );
+	       tmp_wat_placement_nzv.push_back( DW_KR );
+	    }
+
+
+	    // 3.2 oil equation w.r.t porosity
+	    int PSO_ColIndex = GetPSColIndex( GBIndex_C );
+	    _Jacobian_Dm.Col().push_back( PSO_ColIndex );
+	    _Jacobian_Dm.NZV().push_back( DOp );
+	    track_nzv++;
+
+	    
+	    
+	    // 3.3 water equation w.r.t Ln(k)
+	    _Jacobian_Dm.Row().push_back( track_nzv );
+
+	    for( std::size_t i = 0; i < tmp_wat_placement_col.size(); ++i )
+	    {
+	       _Jacobian_Dm.Col().push_back( tmp_wat_placement_col[ i ] );
+	       _Jacobian_Dm.NZV().push_back( tmp_wat_placement_nzv[ i ] );
+	       track_nzv++;
+	    }
+
+	    // 3.4 water equation w.r.t porosity
+	    int PSW_ColIndex = GetPSColIndex( GBIndex_C );
+	    _Jacobian_Dm.Col().push_back( PSW_ColIndex );
+	    _Jacobian_Dm.NZV().push_back( DWp );
+	    track_nzv++;
+	 }
+      }
+   }
+   _Jacobian_Dm.Row().push_back( track_nzv );
+   _Jacobian_Dm.nRow() = VarNumber_Total;
+   _Jacobian_Dm.nCol() = 4 * GridNumber;
+   _Jacobian_Dm.nNZV() = track_nzv;
+
+}
+
+int DiscreteProblem :: GetKxColIndex( std::size_t _Kx_GBIndex ) const
+{
+   return _Kx_GBIndex;
+}
+
+int DiscreteProblem :: GetKyColIndex( std::size_t _Ky_GBIndex ) const
+{
+   return _Ky_GBIndex + GridNumber;
+}
+
+int DiscreteProblem :: GetKzColIndex( std::size_t _Kz_GBIndex ) const
+{
+   return _Kz_GBIndex + 2 * GridNumber;
+}
+
+int DiscreteProblem :: GetPSColIndex( std::size_t _ps_GBIndex ) const // porosity
+{
+   return _ps_GBIndex + 3 * GridNumber;
 }
