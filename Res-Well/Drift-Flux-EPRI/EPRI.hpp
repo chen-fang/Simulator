@@ -126,7 +126,9 @@ ADs EPRI_DF::C2( const ADs& Density_Gas, const ADs& Density_Liquid, const ADs& C
    double ratio = Density_Liquid.value() / Density_Gas.value();
    if( ratio <= 18.0 )
    {
-      tmp = 0.4757 * pow(log( Density_Liquid/Density_Gas, 0.7 ));
+      ADs ratio_ads( 0.0 );
+      ratio_ads = Density_Liquid/Density_Gas;
+      tmp = 0.4757 * pow( log( ratio_ads), 0.7 );
    }
    else if( ratio > 18.0 && C5.value() >= 1.0 )
    {

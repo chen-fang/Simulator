@@ -1,4 +1,4 @@
-INC_ADETL= -I/Users/BlackIce/Documents/Library/ADETL
+INC_ADETL= -I/home/cfang/Library/ADETL
 #INC_SUPERLU= -I/opt/SuperLU_SERIAL/include/
 #INC= -I./src $(INC_ADETL) $(INC_SUPERLU)
 #MKLRTDIR = /opt/intel/mkl/lib/intel64
