@@ -1,5 +1,10 @@
 // Independent Variables
 // Hg, jg, jl, P
+#include "adetl/scalars/ADscalar.hpp"
+#include "adetl/systems/ADvector.hpp"
+
+typedef adetl::ADscalar<> ADs;
+typedef adetl::ADvector   ADv;
 
 struct EPRI_DF
 {
@@ -29,7 +34,8 @@ struct EPRI_DF
 
    ADs C5( const ADs& Density_Gas, const ADs& Density_Liquid );
 
-   ADs C2( const ADs& 
+   ADs C2( const ADs& Density_Gas, const ADs& Density_Liquid,
+	   const ADs& C5 );
    
 };
 
@@ -113,4 +119,30 @@ ADs EPRI_DF::C5( const ADs& Density_Gas, const ADs& Density_Liquid )
    tmp = sqrt( 150.0 * Density_Gas/Density_Liquid );
    return tmp;
 }
+
+ADs EPRI_DF::C2( const ADs& Density_Gas, const ADs& Density_Liquid, const ADs& C5 )
+{
+   ADs tmp( 0.0 );
+   double ratio = Density_Liquid.value() / Density_Gas.value();
+   if( ratio <= 18.0 )
+   {
+      tmp = 0.4757 * pow(log( Density_Liquid/Density_Gas, 0.7 ));
+   }
+   else if( ratio > 18.0 && C5.value() >= 1.0 )
+   {
+      tmp = 1.0;
+   }
+   else
+   {
+      tmp = 1.0 - exp( -C5 / (1.0-C5 ) );
+   }
+   return tmp;
+}
+
+
+
+
+
+
+
 
