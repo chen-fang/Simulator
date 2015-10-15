@@ -19,6 +19,8 @@ struct EPRI_DF
    
    ADs L( const ADs& Hg );
 
+   ADs L_dHg( const ADs& Hg );
+
    ADs ReyNum( const ADs& density,   const ADs& velocity,
 	       const ADs& viscosity, double     diameter );
    
@@ -38,6 +40,10 @@ struct EPRI_DF
 	   const ADs& ReyNum_Gas,  const ADs& ReyNum_Liquid,
 	   const ADs& Hg );
 
+   ADs C0_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
+	       const ADs& ReyNum_Gas,  const ADs& ReyNum_Liquid,
+	       const ADs& Hg );
+   
    // ---------------------------------------------------------
    // ---------------------------------------------------------
 
@@ -63,6 +69,12 @@ struct EPRI_DF
 	    const ADs& j_Liquid,    const ADs& j_Liquid_CCFL,
 	    const ADs& Hg,          double     surface_tension,
 	    double     Dh,          double     g );
+
+   ADs Vgj_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
+		const ADs& ReyNum_Gas,  const ADs& ReyNum_Liquid,
+		const ADs& j_Liquid,    const ADs& j_Liquid_CCFL,
+		const ADs& Hg,          double     surface_tension,
+		double     Dh,          double     g );
 
    // ---------------------------------------------------------
    // ---------------------------------------------------------
@@ -126,6 +138,23 @@ ADs EPRI_DF::L( const ADs& Hg )
       tmp = 1.0;
    }
    return tmp;
+}
+
+ADs EPRI_DF::L_dHg( const ADs& Hg )
+{
+   ADs tmp( 0.0 );
+   tmp = 1.15 * pow( Hg, 0.45 );
+
+   ADs ret;
+   if( tmp.value() > 1.0 )
+   {
+      ret = 0.0;
+   }
+   else
+   {
+      ret = 1.15*0.45* std::pow( Hg, 1-0.45 );
+   }
+   return ret;   
 }
 
 ADs EPRI_DF::ReyNum( const ADs& density,   const ADs& velocity,
@@ -200,6 +229,17 @@ ADs EPRI_DF::C0( const ADs& Density_Gas, const ADs& Density_Liquid,
    ADs ret( 0.0 );
    ret = l / ( k0 + (1.0-k0) * pow( Hg, r ) );
    return ret;
+}
+
+
+ADs EPRI_DF::C0_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
+		     const ADs& ReyNum_Gas,  const ADs& ReyNum_Liquid,
+		     const ADs& Hg )
+{
+   ADs c0( 0.0 );
+   c0 = C0( Density_Gas, Density_Liquid, ReyNum_Gas, ReyNum_Liquid, Hg );
+
+   // more here...
 }
 
 // ------------------------------------------------------------
@@ -326,6 +366,37 @@ ADs EPRI_DF::Vgj( const ADs& Density_Gas, const ADs& Density_Liquid,
    ADs ret( 0.0 );
    ret = 1.41 * tmp * c1 * c2 * c3 * c4;
    
+   return ret;
+}
+
+ADs EPRI_DF::Vgj_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
+		      const ADs& ReyNum_Gas,  const ADs& ReyNum_Liquid,
+		      const ADs& j_Liquid,    const ADs& j_Liquid_CCFL,
+		      const ADs& Hg,          double     surface_tension,
+		      double     Dh,          double     g );
+{
+   ADs vgj( 0.0 );
+   vgj = Vgj( Density_Gas, Density_Liquid, ReyNum_Gas, ReyNum_Liquid,
+	      j_Liquid, j_Liquid_CCFL, Hg, surface_tension, Dh, g )
+
+   ADs re( 0.0 );
+   re = Re( ReyNum_Gas, ReyNum_Liquid );
+
+   ADs a1( 0.0 );
+   a1 = A1( re );
+
+   ADs b1( 0.0 );
+   b1 = B1( a1 );
+
+   ADs c1x( 0.0 );
+   c1x = C1x( b1 );
+
+   ADs c1( 0.0 );
+   c1 = C1( Hg, c1x );
+
+   ADs ret( 0.0 );
+   ret = vgj - vgj/c1 * c1x * pow( Hg, c1x-1.0 );
+
    return ret;
 }
 

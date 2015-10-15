@@ -17,7 +17,7 @@ void extract( const ADv& residual,
    }
 }
 
-void Solve22( std::vector<double>&          R,
+void Solve22( std::vector<double>&                R,
 	      std::vector< std::vector<double> >& J,
 	      std::vector<double>&                update )
 {
@@ -69,15 +69,15 @@ int main()
    ADs Hg( 0.5 );
    Hg.make_independent( 0 );
    
-   // std::cout << Hg << std::endl;
-   // std::cout << j_liquid << std::endl;
-
    EPRI_DF epri;
-   double update_norm;
+   double residual_norm;
+
+   int count = 0;
    do
    {
-      std::cout << "Hg | " << Hg << std::endl;
-      std::cout << "jL | " << j_liquid << std::endl;
+      std::cout << "--------------------------------------------------- Iteration: "<< count++ << std::endl;
+      std::cout << "Hg = " << Hg.value() << std::endl;
+      std::cout << "jL = " << j_liquid.value() << std::endl;
       
       ADs u_gas( 0.0 );
       u_gas = epri.u_Gas( j_gas, Hg );
@@ -105,17 +105,25 @@ int main()
       ADv residual;
       residual.resize( 2, 0.0 );
 
-      residual[0] = Hg*c0/(1.0-Hg*c0)*j_liquid + Hg/(1.0-Hg*c0)*vgj - j_gas;
+      residual[0] = Hg * ( c0*j_liquid + vgj )/( 1.0 - Hg*c0 ) - j_gas;
 
       ADs tmp1( 0.0 );
       tmp1 = Hg * vgj;
       ADs tmp2( 0.0 );
       tmp2 = Hg * c0;
 
-      residual[1] = j_liquid + tmp1.derivative(0)/tmp2.derivative(0) * ( 1.0-Hg*c0 ) + Hg*vgj;
+      std::cout << "1 | " << tmp1 << std::endl;
+      std::cout << "2 | " << tmp2 << std::endl;
+      
+      residual[1] = j_liquid + tmp1.derivative(0)/tmp2.derivative(0) * ( 1.0-tmp2 ) + tmp1;
 
-      // std::cout << residual[0] << std::endl;
-      // std::cout << residual[1] << std::endl;
+      ADs test( 0.0 );
+      test = tmp1.derivative(0)/tmp2.derivative(0) * ( 1.0-tmp2 ); // + tmp1;
+
+      std::cout << test << std::endl;
+
+      // std::cout << "R0 | " << residual[0] << std::endl;
+      std::cout << "R1 | " << residual[1] << std::endl;
 
       std::vector<double> R;
       R.resize( 2 );
@@ -150,11 +158,14 @@ int main()
       Hg = Hg - update[0];
       j_liquid = j_liquid - update[1];
 
-      update_norm = std::sqrt( std::pow(residual[0].value(),2.0) + std::pow(residual[1].value(),2.0) );
-      std::cout << "norm: " << update_norm << std::endl;
+      if( Hg < 0.0 ) Hg.value() = 0.1;
+      if( Hg > 1.0 ) Hg.value() = 0.999;
+
+      residual_norm = std::sqrt( std::pow(residual[0].value(),2.0) + std::pow(residual[1].value(),2.0) );
+      std::cout << "norm: " << residual_norm << std::endl;
       
    }
-   while( update_norm > 1.0E-03 );
+   // while( residual_norm > 1.0E-03 );
    while( false );
    
    return 0;
