@@ -12,4 +12,4 @@ all:
 	g++ $(INC_ADETL) $(CFLAGS) $(SRC) -o run
 
 clean:
-	rm ./run *~
+	rm -rf ./run *~ *.dSYM

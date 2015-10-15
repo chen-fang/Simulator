@@ -8,8 +8,20 @@ typedef adetl::ADvector   ADv;
 
 struct EPRI_DF
 {
+   ADs u_Liquid( const ADs& j_liquid, const ADs& Hg );
+   ADs j_Liquid( const ADs& u_liquid, const ADs& Hg );
+
+   ADs u_Gas( const ADs& j_gas, const ADs& Hg );
+   ADs j_Gas( const ADs& u_gas, const ADs& Hg );
+   
+   // ---------------------------------------------------------
+   // ---------------------------------------------------------
+   
    ADs L( const ADs& Hg );
 
+   ADs ReyNum( const ADs& density,   const ADs& velocity,
+	       const ADs& viscosity, double     diameter );
+   
    ADs Re( const ADs& ReyNum_Gas, const ADs& ReyNum_Liquid );
 
    ADs A1( const ADs& ReyNum );
@@ -76,6 +88,34 @@ struct EPRI_DF
 	    double Dh);
 };
 
+ADs EPRI_DF::u_Liquid( const ADs& j_liquid, const ADs& Hg )
+{
+   ADs ret( 0.0 );
+   ret = j_liquid / Hg;
+   return ret;
+}
+
+ADs EPRI_DF::j_Liquid( const ADs& u_liquid, const ADs& Hg )
+{
+   ADs ret( 0.0 );
+   ret = u_liquid * Hg;
+   return ret;
+}
+
+ADs EPRI_DF::u_Gas( const ADs& j_gas, const ADs& Hg )
+{
+   ADs ret( 0.0 );
+   ret = j_gas / ( 1.0 - Hg );
+   return ret;
+}
+
+ADs EPRI_DF::j_Gas( const ADs& u_gas, const ADs& Hg )
+{
+   ADs ret( 0.0 );
+   ret = u_gas * ( 1.0 - Hg );
+   return ret;
+}
+
 ADs EPRI_DF::L( const ADs& Hg )
 {
    ADs tmp( 0.0 );
@@ -86,6 +126,14 @@ ADs EPRI_DF::L( const ADs& Hg )
       tmp = 1.0;
    }
    return tmp;
+}
+
+ADs EPRI_DF::ReyNum( const ADs& density,   const ADs& velocity,
+		     const ADs& viscosity, double     diameter )
+{
+   ADs ret( 0.0 );
+   ret = density*velocity*diameter/viscosity;
+   return ret;
 }
 
 ADs EPRI_DF::Re( const ADs& ReyNum_Gas, const ADs& ReyNum_Liquid )
@@ -248,11 +296,15 @@ ADs EPRI_DF::Vgj( const ADs& Density_Gas, const ADs& Density_Liquid,
    ADs c1( 0.0 );
    c1 = C1( Hg, c1x );
 
+   // std::cout << "--- c1 --- " << c1 << std::endl;
+
    ADs c5( 0.0 );
    c5 = C5( Density_Gas, Density_Liquid );
 
    ADs c2( 0.0 );
    c2 = C2( Density_Gas, Density_Liquid, c5 );
+
+   // std::cout << "--- C2 --- " << c2 << std::endl;
 
    ADs b2( 0.0 );
    b2 = B2( ReyNum_Liquid );
@@ -260,6 +312,8 @@ ADs EPRI_DF::Vgj( const ADs& Density_Gas, const ADs& Density_Liquid,
    ADs c10( 0.0 );
    c10 = C10( ReyNum_Gas, ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh );
 
+   // std::cout << "--- C10 --- " << c10 << std::endl;
+   
    ADs c3( 0.0 );
    c3 = C3( c10, b2 );
 
@@ -290,8 +344,14 @@ ADs EPRI_DF::Jfrx( const ADs& j_Liquid, const ADs& j_Liquid_CCFL )
 {
    ADs z = Z( j_Liquid, j_Liquid_CCFL );
    ADs ratio = j_Liquid / j_Liquid_CCFL;
+
+   // std::cout << "--- Jfrx - ratio --- " << ratio << std::endl;
+   
    ADs ret( 0.0 );
-   ret = pow( 1.0-ratio, z );
+   if( ratio.value() != 1.0 )
+   {
+      ret = pow( 1.0-ratio, z );
+   }
    return ret;
 }
 
@@ -346,6 +406,8 @@ ADs EPRI_DF::C10( const ADs& ReyNum_Gas, const ADs& ReyNum_Liquid,
 {
    ADs jfrx( 0.0 );
    jfrx = Jfrx( j_Liquid, j_Liquid_CCFL );
+
+   // std::cout << "--- Jfrx --- " << jfrx << std::endl;
    
    ADs gamma( 0.0 );
    gamma = Gamma( ReyNum_Gas, ReyNum_Liquid, jfrx, Dh );
@@ -358,6 +420,8 @@ ADs EPRI_DF::C10( const ADs& ReyNum_Gas, const ADs& ReyNum_Liquid,
    
    ADs c10_3( 0,0 );
    c10_3 = C10_3( ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh );
+
+   // std::cout << "--- C10_1 --- " << c10_1 << std::endl;
    
    ADs ret( 0.0 );
    ret = c10_1 + c10_2 + c10_3;
