@@ -51,6 +51,8 @@ struct EPRI_DF
 
    ADs C1( const ADs& Hg, const ADs& C1x );
 
+   ADs C1_dHg( const ADs& Hg, const ADs& C1x );
+
    ADs C5( const ADs& Density_Gas, const ADs& Density_Liquid );
 
    ADs C2( const ADs& Density_Gas, const ADs& Density_Liquid,
@@ -152,7 +154,7 @@ ADs EPRI_DF::L_dHg( const ADs& Hg )
    }
    else
    {
-      ret = 1.15*0.45* std::pow( Hg, 1-0.45 );
+      ret = 1.15*0.45* pow( Hg, 0.45-1.0 );
    }
    return ret;   
 }
@@ -236,10 +238,35 @@ ADs EPRI_DF::C0_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
 		     const ADs& ReyNum_Gas,  const ADs& ReyNum_Liquid,
 		     const ADs& Hg )
 {
-   ADs c0( 0.0 );
-   c0 = C0( Density_Gas, Density_Liquid, ReyNum_Gas, ReyNum_Liquid, Hg );
+   ADs l( 0.0 );
+   l = L( Hg );
+   
+   ADs re( 0.0 );
+   re = Re( ReyNum_Gas, ReyNum_Liquid );
+      
+   ADs a1( 0.0 );
+   a1 = A1( re );
+   
+   ADs b1( 0.0 );
+   b1 = B1( a1 );
+   
+   ADs k0( 0.0 );
+   k0 = K0( Density_Gas, Density_Liquid, b1 );
 
-   // more here...
+   ADs r( 0.0 );
+   r = R( Density_Gas, Density_Liquid, b1 );   
+   
+   ADs tmp( 0.0 );
+   tmp = k0 + (1.0-k0) * pow( Hg, r );
+
+
+   ADs l_dHg( 0.0 );
+   l_dHg = L_dHg( Hg );
+
+   ADs ret( 0.0 );
+   ret = ( l_dHg * tmp - l * (1.0-k0) * r * pow( Hg, r-1.0 ) ) / pow( tmp, 2.0 );
+
+   return ret;
 }
 
 // ------------------------------------------------------------
@@ -254,6 +281,13 @@ ADs EPRI_DF::C1( const ADs& Hg, const ADs& C1x )
    ADs tmp( 0.0 );
    tmp = pow( 1.0 - Hg, C1x );
    return tmp;
+}
+
+ADs EPRI_DF::C1_dHg( const ADs& Hg, const ADs& C1x )
+{
+   ADs ret( 0.0 );
+   ret = -C1x * pow( 1.0-Hg, C1x-1.0 );
+   return ret;
 }
 
 ADs EPRI_DF::C5( const ADs& Density_Gas, const ADs& Density_Liquid )
@@ -373,14 +407,60 @@ ADs EPRI_DF::Vgj_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
 		      const ADs& ReyNum_Gas,  const ADs& ReyNum_Liquid,
 		      const ADs& j_Liquid,    const ADs& j_Liquid_CCFL,
 		      const ADs& Hg,          double     surface_tension,
-		      double     Dh,          double     g );
+		      double     Dh,          double     g )
 {
+   // ADs re( 0.0 );
+   // re = Re( ReyNum_Gas, ReyNum_Liquid );
+
+   // ADs a1( 0.0 );
+   // a1 = A1( re );
+
+   // ADs b1( 0.0 );
+   // b1 = B1( a1 );
+
+   // ADs c1x( 0.0 );
+   // c1x = C1x( b1 );
+
+   // // ADs c1( 0.0 );
+   // // c1 = C1( Hg, c1x );
+   
+   // ADs c1_dHg( 0.0 );
+   // c1_dHg = C1_dHg( Hg, c1x );
+
+   // ADs c5( 0.0 );
+   // c5 = C5( Density_Gas, Density_Liquid );
+
+   // ADs c2( 0.0 );
+   // c2 = C2( Density_Gas, Density_Liquid, c5 );
+
+   // ADs b2( 0.0 );
+   // b2 = B2( ReyNum_Liquid );
+
+   // ADs c10( 0.0 );
+   // c10 = C10( ReyNum_Gas, ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh );
+
+   // ADs c3( 0.0 );
+   // c3 = C3( c10, b2 );
+
+   // double c7 = C7( Dh );
+   // double c4 = C4( c7 );
+   
+   // ADs tmp( 0.0 );
+   // tmp = pow( (Density_Liquid-Density_Gas)*g*surface_tension/(Density_Liquid*Density_Liquid), 0.25 );
+   
+   // ADs ret( 0.0 );
+   // ret = 1.41 * tmp * c1_dHg * c2 * c3 * c4;
+   
+   // return ret;
+   
    ADs vgj( 0.0 );
    vgj = Vgj( Density_Gas, Density_Liquid, ReyNum_Gas, ReyNum_Liquid,
-	      j_Liquid, j_Liquid_CCFL, Hg, surface_tension, Dh, g )
+   	      j_Liquid, j_Liquid_CCFL, Hg, surface_tension, Dh, g );
 
    ADs re( 0.0 );
    re = Re( ReyNum_Gas, ReyNum_Liquid );
+
+   std::cout << "--- --- Check Re --- ---" << std::endl << re << std::endl;
 
    ADs a1( 0.0 );
    a1 = A1( re );
@@ -388,14 +468,25 @@ ADs EPRI_DF::Vgj_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
    ADs b1( 0.0 );
    b1 = B1( a1 );
 
+   std::cout << "--- --- Check B1 --- ---" << std::endl << b1 << std::endl;
+
    ADs c1x( 0.0 );
    c1x = C1x( b1 );
 
+   std::cout << "--- --- Check C1X --- ---" << std::endl << c1x << std::endl;   
+   
    ADs c1( 0.0 );
    c1 = C1( Hg, c1x );
 
+   // std::cout << "--- --- Check C1 --- ---" << std::endl << c1 << std::endl;
+
+   ADs c1_dHg( 0.0 );
+   c1_dHg = C1_dHg( Hg, c1x );
+
+   // std::cout << "--- --- Check C1_dHg --- ---" << std::endl << c1_dHg << std::endl;
+
    ADs ret( 0.0 );
-   ret = vgj - vgj/c1 * c1x * pow( Hg, c1x-1.0 );
+   ret = vgj/c1 * c1_dHg;
 
    return ret;
 }

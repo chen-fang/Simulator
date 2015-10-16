@@ -66,7 +66,7 @@ int main()
    j_liquid *= -1.0;
    j_liquid.make_independent( 1 );
    
-   ADs Hg( 0.5 );
+   ADs Hg( 0.35 );
    Hg.make_independent( 0 );
    
    EPRI_DF epri;
@@ -83,6 +83,8 @@ int main()
       u_gas = epri.u_Gas( j_gas, Hg );
       ADs u_liquid( 0.0 );
       u_liquid = epri.u_Liquid( j_liquid, Hg );
+
+      std::cout << "u_liquid" << std::endl << u_liquid << std::endl;
 
       ADs re_gas( 0.0 );
       re_gas = epri.ReyNum( density_gas, u_gas, viscosity_gas, diameter );
@@ -112,18 +114,31 @@ int main()
       ADs tmp2( 0.0 );
       tmp2 = Hg * c0;
 
-      std::cout << "1 | " << tmp1 << std::endl;
-      std::cout << "2 | " << tmp2 << std::endl;
-      
       residual[1] = j_liquid + tmp1.derivative(0)/tmp2.derivative(0) * ( 1.0-tmp2 ) + tmp1;
 
-      ADs test( 0.0 );
-      test = tmp1.derivative(0)/tmp2.derivative(0) * ( 1.0-tmp2 ); // + tmp1;
+      ADs c0_dHg = epri.C0_dHg( density_gas, density_liquid, re_gas, re_liquid, Hg );
+      
+      ADs HgC0_dHg( 0.0 );
+      HgC0_dHg = c0 + Hg * c0_dHg;
 
-      std::cout << test << std::endl;
+      // std::cout << "Hg * C0 --- " << std::endl << tmp2 << std::endl;
+      // std::cout << "HgC0_dHg ---" << std::endl << HgC0_dHg << std::endl;
+
+      ADs vgj_dHg( 0.0 );
+      vgj_dHg = epri.Vgj_dHg( density_gas, density_liquid, re_gas, re_liquid,
+			      j_liquid, j_liquid, Hg, surface_tension, diameter, g );
+
+      std::cout << "Vgj --- " << std::endl << vgj << std::endl;
+      std::cout << "Vgj_dHg ---" << std::endl << vgj_dHg << std::endl;
+      
+      ADs HgVgj_dHg( 0.0 );
+      HgVgj_dHg = vgj + Hg * vgj_dHg;
+
+      // std::cout << "Hg * Vgj --- " << std::endl << tmp1 << std::endl;
+      // std::cout << "HgVgj_dHg ---" << std::endl << HgVgj_dHg << std::endl;
 
       // std::cout << "R0 | " << residual[0] << std::endl;
-      std::cout << "R1 | " << residual[1] << std::endl;
+      // std::cout << "R1 | " << residual[1] << std::endl;
 
       std::vector<double> R;
       R.resize( 2 );
@@ -139,7 +154,7 @@ int main()
       {
 	 for( int j = 0; j < 2 ; ++j )
 	 {
-	    std::cout << J[i][j] << std::endl;
+	    // std::cout << J[i][j] << std::endl;
 	 }
       }
       
@@ -162,7 +177,7 @@ int main()
       if( Hg > 1.0 ) Hg.value() = 0.999;
 
       residual_norm = std::sqrt( std::pow(residual[0].value(),2.0) + std::pow(residual[1].value(),2.0) );
-      std::cout << "norm: " << residual_norm << std::endl;
+      // std::cout << "norm: " << residual_norm << std::endl;
       
    }
    // while( residual_norm > 1.0E-03 );
