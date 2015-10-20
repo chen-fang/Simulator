@@ -79,30 +79,42 @@ int main()
       std::cout << "Hg = " << Hg.value() << std::endl;
       std::cout << "jL = " << j_liquid.value() << std::endl;
       
-      ADs u_gas( 0.0 );
+      ADs u_gas( 0.0 ), u_gas_dHg( 0.0 );
       u_gas = epri.u_Gas( j_gas, Hg );
-      ADs u_liquid( 0.0 );
+      u_gas_dHg = epri.u_Gas_dHg( j_gas, Hg );
+      
+      ADs u_liquid( 0.0 ), u_liquid_dHg( 0.0 );
       u_liquid = epri.u_Liquid( j_liquid, Hg );
+      u_liquid_dHg = epri.u_Liquid_dHg( j_liquid, Hg );
 
       std::cout << "u_liquid" << std::endl << u_liquid << std::endl;
 
-      ADs re_gas( 0.0 );
+      ADs re_gas( 0.0 ), re_gas_dHg( 0.0 );
       re_gas = epri.ReyNum( density_gas, u_gas, viscosity_gas, diameter );
-      ADs re_liquid( 0.0 );
+      re_gas_dHg = epri.ReyNum_dHg( density_gas, u_gas_dHg, viscosity_gas, diameter );
+      
+      ADs re_liquid( 0.0 ), re_liquid_dHg( 0.0 );
       re_liquid = epri.ReyNum( density_liquid, u_liquid, viscosity_liquid, diameter );
+      re_liquid_dHg = epri.ReyNum( density_liquid, u_liquid_dHg, viscosity_liquid, diameter );
 
       // std::cout << re_gas << std::endl;
       // std::cout << re_liquid << std::endl;
 
-      ADs c0( 0.0 );
+      ADs c0( 0.0 ), c0_dHg( 0.0 );
       c0 = epri.C0( density_gas, density_liquid, re_gas, re_liquid, Hg );
+      c0_dHg = epri.C0_dHg( density_gas, density_liquid, re_gas, re_liquid,
+			    re_gas_dHg, re_liquid_dHg, Hg );
 
-      ADs vgj( 0.0 );
+      ADs vgj( 0.0 ), vgj_dHg( 0.0 );
       vgj = epri.Vgj( density_gas, density_liquid, re_gas, re_liquid,
 		      j_liquid, j_liquid, Hg, surface_tension, diameter, g );
+      vgj_dHg = epri.Vgj_dHg( density_gas, density_liquid, re_gas, re_liquid,
+			      j_liquid, j_liquid, Hg, surface_tension, diameter, g );
 
-      // std::cout << c0 << std::endl;
-      // std::cout << vgj << std::endl;
+      std::cout << "Vgj --- " << std::endl << vgj << std::endl;
+      std::cout << "Vgj_dHg ---" << std::endl << vgj_dHg << std::endl;
+
+
 
       ADv residual;
       residual.resize( 2, 0.0 );
@@ -116,20 +128,12 @@ int main()
 
       residual[1] = j_liquid + tmp1.derivative(0)/tmp2.derivative(0) * ( 1.0-tmp2 ) + tmp1;
 
-      ADs c0_dHg = epri.C0_dHg( density_gas, density_liquid, re_gas, re_liquid, Hg );
-      
       ADs HgC0_dHg( 0.0 );
       HgC0_dHg = c0 + Hg * c0_dHg;
 
       // std::cout << "Hg * C0 --- " << std::endl << tmp2 << std::endl;
       // std::cout << "HgC0_dHg ---" << std::endl << HgC0_dHg << std::endl;
 
-      ADs vgj_dHg( 0.0 );
-      vgj_dHg = epri.Vgj_dHg( density_gas, density_liquid, re_gas, re_liquid,
-			      j_liquid, j_liquid, Hg, surface_tension, diameter, g );
-
-      std::cout << "Vgj --- " << std::endl << vgj << std::endl;
-      std::cout << "Vgj_dHg ---" << std::endl << vgj_dHg << std::endl;
       
       ADs HgVgj_dHg( 0.0 );
       HgVgj_dHg = vgj + Hg * vgj_dHg;

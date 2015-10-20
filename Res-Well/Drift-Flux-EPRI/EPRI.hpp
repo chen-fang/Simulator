@@ -8,40 +8,50 @@ typedef adetl::ADvector   ADv;
 
 struct EPRI_DF
 {
-   ADs u_Liquid( const ADs& j_liquid, const ADs& Hg );
-   ADs j_Liquid( const ADs& u_liquid, const ADs& Hg );
+   ADs u_Liquid(     const ADs& j_liquid, const ADs& Hg );
+   ADs u_Liquid_dHg( const ADs& j_liquid, const ADs& Hg );
 
-   ADs u_Gas( const ADs& j_gas, const ADs& Hg );
-   ADs j_Gas( const ADs& u_gas, const ADs& Hg );
+   ADs u_Gas(     const ADs& j_gas, const ADs& Hg );
+   ADs u_Gas_dHg( const ADs& j_gas, const ADs& Hg );
    
    // ---------------------------------------------------------
    // ---------------------------------------------------------
    
-   ADs L( const ADs& Hg );
-
+   ADs L(     const ADs& Hg );
    ADs L_dHg( const ADs& Hg );
 
-   ADs ReyNum( const ADs& density,   const ADs& velocity,
-	       const ADs& viscosity, double     diameter );
+   ADs ReyNum(     const ADs& density,   const ADs& velocity,
+		   const ADs& viscosity, double     diameter );
+   ADs ReyNum_dHg( const ADs& density,   const ADs& velocity_dHg,
+		   const ADs& viscosity, double     diameter );
    
-   ADs Re( const ADs& ReyNum_Gas, const ADs& ReyNum_Liquid );
+   
+   ADs Re(     const ADs& ReyNum_Gas,     const ADs& ReyNum_Liquid );
+   ADs Re_dHg( const ADs& ReyNum_Gas_dHg, const ADs& ReyNum_Liquid_dHg );
 
-   ADs A1( const ADs& ReyNum );
+   ADs A1(     const ADs& ReyNum );
+   ADs A1_dHg( const ADs& ReyNum, const ADs& ReyNum_dHg );
   
-   ADs B1( const ADs& A1 );
+   ADs B1(     const ADs& A1 );
+   ADs B1_dHg( const ADs& A1, const ADs& A1_dHg );
 
-   ADs K0( const ADs& Density_Gas, const ADs& Density_Liquid,
-	   const ADs& B1 );
+   ADs K0(     const ADs& Density_Gas, const ADs& Density_Liquid,
+	       const ADs& B1 );
+   ADs K0_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
+	       const ADs& B1_dHg );
 
-   ADs R( const ADs& Density_Gas, const ADs& Density_Liquid,
-	  const ADs& B1 );
+   ADs R(     const ADs& Density_Gas, const ADs& Density_Liquid,
+	      const ADs& B1 );
+   ADs R_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
+	      const ADs& B1,          const ADs& B1_dHg );
 
    ADs C0( const ADs& Density_Gas, const ADs& Density_Liquid,
 	   const ADs& ReyNum_Gas,  const ADs& ReyNum_Liquid,
 	   const ADs& Hg );
 
-   ADs C0_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
-	       const ADs& ReyNum_Gas,  const ADs& ReyNum_Liquid,
+   ADs C0_dHg( const ADs& Density_Gas,     const ADs& Density_Liquid,
+	       const ADs& ReyNum_Gas,      const ADs& ReyNum_Liquid,
+	       const ADs& ReyNum_Gas_dHg,  const ADs& ReyNum_Liquid_dHg,    	       
 	       const ADs& Hg );
    
    // ---------------------------------------------------------
@@ -105,28 +115,30 @@ struct EPRI_DF
 ADs EPRI_DF::u_Liquid( const ADs& j_liquid, const ADs& Hg )
 {
    ADs ret( 0.0 );
-   ret = j_liquid / Hg;
+   ret = j_liquid / ( 1.0 - Hg );
    return ret;
 }
 
-ADs EPRI_DF::j_Liquid( const ADs& u_liquid, const ADs& Hg )
+ADs EPRI_DF::u_Liquid_dHg( const ADs& j_liquid, const ADs& Hg )
 {
+   ADs tmp( 0.0 );
+   tmp = 1.0 - Hg;
    ADs ret( 0.0 );
-   ret = u_liquid * Hg;
+   ret = j_liquid / ( tmp * tmp );
    return ret;
 }
 
 ADs EPRI_DF::u_Gas( const ADs& j_gas, const ADs& Hg )
 {
    ADs ret( 0.0 );
-   ret = j_gas / ( 1.0 - Hg );
+   ret = j_gas / Hg;
    return ret;
 }
 
-ADs EPRI_DF::j_Gas( const ADs& u_gas, const ADs& Hg )
+ADs EPRI_DF::u_Gas_dHg( const ADs& j_gas, const ADs& Hg )
 {
    ADs ret( 0.0 );
-   ret = u_gas * ( 1.0 - Hg );
+   ret = -j_gas / ( Hg * Hg );
    return ret;
 }
 
@@ -167,44 +179,104 @@ ADs EPRI_DF::ReyNum( const ADs& density,   const ADs& velocity,
    return ret;
 }
 
+ADs EPRI_DF::ReyNum_dHg( const ADs& density,   const ADs& velocity_dHg,
+			 const ADs& viscosity, double     diameter )
+{
+   ADs ret( 0.0 );
+   ret = density*velocity_dHg*diameter/viscosity;
+   return ret;
+}
+
+
 ADs EPRI_DF::Re( const ADs& ReyNum_Gas, const ADs& ReyNum_Liquid )
 {
    return ReyNum_Gas;
 }
+ADs EPRI_DF::Re_dHg( const ADs& ReyNum_Gas_dHg, const ADs& ReyNum_Liquid_dHg )
+{
+   return ReyNum_Gas_dHg;
+}
+
 
 ADs EPRI_DF::A1( const ADs& ReyNum )
 {
-   ADs tmp( 0.0 );
-   tmp = 1.0 / ( 1.0 + exp(-ReyNum/60000) );
-   return tmp;
+   ADs ret( 0.0 );
+   ret = 1.0 / ( 1.0 + exp(-ReyNum/60000) );
+   return ret;
 }
+ADs EPRI_DF::A1_dHg( const ADs& ReyNum, const ADs& ReyNum_dHg )
+{
+   ADs tmp1( 0.0 );
+   tmp1 = exp(-ReyNum/60000);
+
+   ADs tmp2( 0.0 );
+   tmp2 = 1.0 + tmp1;
+
+   ADs ret( 0.0 );
+   ret = tmp1 / 60000.0 * ReyNum_dHg / ( tmp2 * tmp2 );
+      
+   return ret;
+}
+
 
 ADs EPRI_DF::B1( const ADs& A1 )
 {
-   ADs tmp( 0.0 );
+   ADs ret( 0.0 );
    if( A1.value() > 0.8 )
    {
-       tmp = 0.8;
-       return tmp;
+       ret = 0.8;
+       return ret;
    }
    return A1;
 }
+ADs EPRI_DF::B1_dHg( const ADs& A1, const ADs& A1_dHg )
+{
+   ADs ret( 0.0 );
+   if( A1.value() > 0.8 )
+   {
+      ret = 0.0;
+   }
+   else
+   {
+      ret = A1_dHg;
+   }
+   return ret;
+}
+
 
 ADs EPRI_DF::K0( const ADs& Density_Gas, const ADs& Density_Liquid,
 		 const ADs& B1 )
 {
-   ADs tmp( 0.0 );
-   tmp = B1 + ( 1.0 - B1 ) * pow( Density_Gas/Density_Liquid, 0.25 );
-   return tmp;
+   ADs ret( 0.0 );
+   ret = B1 + ( 1.0 - B1 ) * pow( Density_Gas/Density_Liquid, 0.25 );
+   return ret;
+}
+ADs EPRI_DF::K0_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
+		     const ADs& B1_dHg )
+{
+   ADs ret( 0.0 );
+   ret = B1_dHg * ( 1.0 - pow( Density_Gas/Density_Liquid, 0.25 ) );
+   return ret;
 }
 
 ADs EPRI_DF::R(  const ADs& Density_Gas, const ADs& Density_Liquid,
 		 const ADs& B1 )
 {
-   ADs tmp( 0.0 );
-   tmp = ( 1.0 + 1.57*Density_Gas/Density_Liquid ) / ( 1.0 - B1 );
-   return tmp;
+   ADs ret( 0.0 );
+   ret = ( 1.0 + 1.57*Density_Gas/Density_Liquid ) / ( 1.0 - B1 );
+   return ret;
 }
+ADs EPRI_DF::R_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
+		    const ADs& B1,          const ADs& B1_dHg )
+{
+   ADs tmp( 0.0 );
+   tmp = 1.0 - B1;
+
+   ADs ret( 0.0 );
+   ret = ( 1.0 + 1.57*Density_Gas/Density_Liquid ) * B1_dHg / ( tmp*tmp );
+   return ret;
+}
+
 
 ADs EPRI_DF::C0( const ADs& Density_Gas, const ADs& Density_Liquid,
 		 const ADs& ReyNum_Gas,  const ADs& ReyNum_Liquid,
@@ -234,37 +306,41 @@ ADs EPRI_DF::C0( const ADs& Density_Gas, const ADs& Density_Liquid,
 }
 
 
-ADs EPRI_DF::C0_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
-		     const ADs& ReyNum_Gas,  const ADs& ReyNum_Liquid,
+ADs EPRI_DF::C0_dHg( const ADs& Density_Gas,     const ADs& Density_Liquid,
+		     const ADs& ReyNum_Gas,      const ADs& ReyNum_Liquid,
+		     const ADs& ReyNum_Gas_dHg,  const ADs& ReyNum_Liquid_dHg,		     
 		     const ADs& Hg )
 {
-   ADs l( 0.0 );
+   ADs l( 0.0 ), l_dHg( 0.0 );
    l = L( Hg );
-   
-   ADs re( 0.0 );
-   re = Re( ReyNum_Gas, ReyNum_Liquid );
-      
-   ADs a1( 0.0 );
-   a1 = A1( re );
-   
-   ADs b1( 0.0 );
-   b1 = B1( a1 );
-   
-   ADs k0( 0.0 );
-   k0 = K0( Density_Gas, Density_Liquid, b1 );
-
-   ADs r( 0.0 );
-   r = R( Density_Gas, Density_Liquid, b1 );   
-   
-   ADs tmp( 0.0 );
-   tmp = k0 + (1.0-k0) * pow( Hg, r );
-
-
-   ADs l_dHg( 0.0 );
    l_dHg = L_dHg( Hg );
+   
+   ADs re( 0.0 ), re_dHg( 0.0 );
+   re = Re( ReyNum_Gas, ReyNum_Liquid );
+   re_dHg = Re_dHg( ReyNum_Gas_dHg, ReyNum_Liquid_dHg );
+      
+   ADs a1( 0.0 ), a1_dHg( 0.0 );
+   a1 = A1( re );
+   a1_dHg = A1_dHg( re, re_dHg );
+   
+   ADs b1( 0.0 ), b1_dHg( 0.0 );
+   b1 = B1( a1 );
+   b1_dHg = B1_dHg( a1, a1_dHg );
+   
+   ADs k0( 0.0 ), k0_dHg( 0.0 );
+   k0 = K0( Density_Gas, Density_Liquid, b1 );
+   k0_dHg = K0_dHg( Density_Gas, Density_Liquid, b1_dHg );
 
+   ADs r( 0.0 ), r_dHg( 0.0 );
+   r = R( Density_Gas, Density_Liquid, b1 );
+   r_dHg = R_dHg( Density_Gas, Density_Liquid, b1, b1_dHg );
+   
+   ADs X( 0.0 ), X_dHg( 0.0 );
+   X = k0 + (1.0-k0) * pow( Hg, r );
+   X_dHg = k0_dHg - k0_dHg * pow( Hg, r ) + (1.0-k0) * exp( r*log(Hg) ) * ( r_dHg*log(Hg) + r/Hg );
+   
    ADs ret( 0.0 );
-   ret = ( l_dHg * tmp - l * (1.0-k0) * r * pow( Hg, r-1.0 ) ) / pow( tmp, 2.0 );
+   ret = ( l_dHg * X - X_dHg * l ) / ( X * X );
 
    return ret;
 }
