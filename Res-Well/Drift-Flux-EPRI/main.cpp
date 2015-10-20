@@ -38,6 +38,18 @@ void Solve22( std::vector<double>&                R,
    update[0] = ( R[0] - update[1]*J[0][1] ) / J[0][0];
 }
 
+void isEqual( const ADs& a, const ADs& b )
+{
+   if( a.derivative(0) == b.value() )
+   {
+      std::cout << "Equal: " << b.value() << std::endl;
+   }
+   else
+   {
+      std::cout << "NOT Equal: " << a.derivative(0) << "  |  " << b.value() << std::endl;
+   }
+}
+
 int main()
 {
    ADs density_liquid( 1000.0 ); // kg/m^3
@@ -73,6 +85,7 @@ int main()
    double residual_norm;
 
    int count = 0;
+   
    do
    {
       std::cout << "--------------------------------------------------- Iteration: "<< count++ << std::endl;
@@ -82,20 +95,27 @@ int main()
       ADs u_gas( 0.0 ), u_gas_dHg( 0.0 );
       u_gas = epri.u_Gas( j_gas, Hg );
       u_gas_dHg = epri.u_Gas_dHg( j_gas, Hg );
+
+      // isEqual( u_gas, u_gas_dHg );
       
       ADs u_liquid( 0.0 ), u_liquid_dHg( 0.0 );
       u_liquid = epri.u_Liquid( j_liquid, Hg );
       u_liquid_dHg = epri.u_Liquid_dHg( j_liquid, Hg );
 
-      std::cout << "u_liquid" << std::endl << u_liquid << std::endl;
+      // isEqual( u_liquid, u_liquid_dHg );
+      // std::cout << "u_liquid" << std::endl << u_liquid << std::endl;
 
       ADs re_gas( 0.0 ), re_gas_dHg( 0.0 );
       re_gas = epri.ReyNum( density_gas, u_gas, viscosity_gas, diameter );
       re_gas_dHg = epri.ReyNum_dHg( density_gas, u_gas_dHg, viscosity_gas, diameter );
+
+      // isEqual( re_gas, re_gas_dHg );
       
       ADs re_liquid( 0.0 ), re_liquid_dHg( 0.0 );
       re_liquid = epri.ReyNum( density_liquid, u_liquid, viscosity_liquid, diameter );
       re_liquid_dHg = epri.ReyNum( density_liquid, u_liquid_dHg, viscosity_liquid, diameter );
+
+      // isEqual( re_liquid, re_liquid_dHg );
 
       // std::cout << re_gas << std::endl;
       // std::cout << re_liquid << std::endl;
@@ -105,6 +125,8 @@ int main()
       c0_dHg = epri.C0_dHg( density_gas, density_liquid, re_gas, re_liquid,
 			    re_gas_dHg, re_liquid_dHg, Hg );
 
+      isEqual( c0, c0_dHg );
+/*
       ADs vgj( 0.0 ), vgj_dHg( 0.0 );
       vgj = epri.Vgj( density_gas, density_liquid, re_gas, re_liquid,
 		      j_liquid, j_liquid, Hg, surface_tension, diameter, g );
@@ -182,10 +204,14 @@ int main()
 
       residual_norm = std::sqrt( std::pow(residual[0].value(),2.0) + std::pow(residual[1].value(),2.0) );
       // std::cout << "norm: " << residual_norm << std::endl;
-      
+
+
+      */      
    }
    // while( residual_norm > 1.0E-03 );
    while( false );
-   
+  
+
+
    return 0;
 }
