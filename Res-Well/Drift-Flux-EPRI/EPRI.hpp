@@ -6,6 +6,18 @@
 typedef adetl::ADscalar<> ADs;
 typedef adetl::ADvector   ADv;
 
+void isEqual( const ADs& a, const ADs& b )
+{
+   if( a.derivative(0) == b.value() )
+   {
+      std::cout << "Equal: " << b.value() << std::endl;
+   }
+   else
+   {
+      std::cout << "NOT Equal: " << a.derivative(0) << "  |  " << b.value() << std::endl;
+   }
+}
+
 struct EPRI_DF
 {
    ADs u_Liquid(     const ADs& j_liquid, const ADs& Hg );
@@ -71,10 +83,10 @@ struct EPRI_DF
 	   const ADs& C5 );
 
    ADs B2(     const ADs& ReyNum_Liquid );
-   ADs B2_dHg( const ADs& ReyNum_Liquid, const ADs& ReyNum_dHg_Liquid );
+   ADs B2_dHg( const ADs& ReyNum_Liquid, const ADs& ReyNum_Liquid_dHg );
 
    ADs C3(     const ADs& C10, const ADs& B2 );
-   ADS C3_dHg( const ADs& C10, const ADs& B2, const ADs& C10_dHg, const ADs& B2_dHg );
+   ADs C3_dHg( const ADs& C10, const ADs& B2, const ADs& C10_dHg, const ADs& B2_dHg );
 
    double C7( double Dh );
 
@@ -86,11 +98,12 @@ struct EPRI_DF
 	    const ADs& Hg,          double     surface_tension,
 	    double     Dh,          double     g );
 
-   ADs Vgj_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
-		const ADs& ReyNum_Gas,  const ADs& ReyNum_Liquid,
-		const ADs& j_Liquid,    const ADs& j_Liquid_CCFL,
-		const ADs& Hg,          double     surface_tension,
-		double     Dh,          double     g );
+   ADs Vgj_dHg( const ADs& Density_Gas,     const ADs& Density_Liquid,
+		const ADs& ReyNum_Gas,      const ADs& ReyNum_Liquid,
+		const ADs& ReyNum_Gas_dHg,  const ADs& ReyNum_Liquid_dHg,
+		const ADs& j_Liquid,        const ADs& j_Liquid_CCFL,
+		const ADs& Hg,              double     surface_tension,
+		double     Dh,              double     g );
 
    // ---------------------------------------------------------
    // ---------------------------------------------------------
@@ -102,21 +115,34 @@ struct EPRI_DF
    ADs Gamma(     const ADs& ReyNum_Gas,     const ADs& ReyNum_Liquid,
 		  const ADs& Jfrx,           double     Dh );
    ADs Gamma_dHg( const ADs& ReyNum_Gas,     const ADs& ReyNum_Liquid,
-		  const ADS& ReyNum_Gas_dHg, const ADs& ReyNum_Liquid_dHg,
+		  const ADs& ReyNum_Gas_dHg, const ADs& ReyNum_Liquid_dHg,
 		  const ADs& Jfrx,           double     Dh );
 
-   ADs C10_1( const ADs& ReyNum_Liquid, const ADs& gamma,
-	      double     Dh);
+   ADs C10_1(     const ADs& ReyNum_Liquid, const ADs& gamma,
+	          double     Dh );
+   ADs C10_1_dHg( const ADs& ReyNum_Liquid, const ADs& gamma,
+		  double     Dh,            const ADs& ReyNum_Liquid_dHg );
 
-   ADs C10_2( const ADs& ReyNum_Liquid, const ADs& j_Liquid,
-	      const ADs& j_Liquid_CCFL, double     Dh );
+   ADs C10_2(     const ADs& ReyNum_Liquid, const ADs& j_Liquid,
+		  const ADs& j_Liquid_CCFL, double     Dh );
+   ADs C10_2_dHg( const ADs& ReyNum_Liquid, const ADs& j_Liquid,
+		  const ADs& j_Liquid_CCFL, double     Dh,
+		  const ADs& ReyNum_Liquid_dHg );
 
-   ADs C10_3( const ADs& ReyNum_Liquid, const ADs& j_Liquid,
-	      const ADs& j_Liquid_CCFL, double     Dh );
+   ADs C10_3(     const ADs& ReyNum_Liquid, const ADs& j_Liquid,
+		  const ADs& j_Liquid_CCFL, double     Dh );
+   ADs C10_3_dHg( const ADs& ReyNum_Liquid, const ADs& j_Liquid,
+		  const ADs& j_Liquid_CCFL, double     Dh,
+		  const ADs& ReyNum_Liquid_dHg );
 
-   ADs C10( const ADs& ReyNum_Gas, const ADs& ReyNum_Liquid,
-	    const ADs& j_Liquid,   const ADs& j_Liquid_CCFL,
-	    double Dh);
+   
+   ADs C10(     const ADs& ReyNum_Gas,     const ADs& ReyNum_Liquid,
+		const ADs& j_Liquid,       const ADs& j_Liquid_CCFL,
+		double     Dh);
+   ADs C10_dHg( const ADs& ReyNum_Gas,     const ADs& ReyNum_Liquid,
+		const ADs& ReyNum_Gas_dHg, const ADs& ReyNum_Liquid_dHg,
+		const ADs& j_Liquid,       const ADs& j_Liquid_CCFL,
+		double     Dh);   
 };
 
 ADs EPRI_DF::u_Liquid( const ADs& j_liquid, const ADs& Hg )
@@ -422,12 +448,12 @@ ADs EPRI_DF::B2( const ADs& ReyNum_Liquid )
    ret = pow( 1.0/tmp, 0.4 );
    return ret;
 }
-ADs EPRI_DF::B2_dHg( const ADs& ReyNum_Liquid, const ADs& ReyNum_dHg_Liquid )
+ADs EPRI_DF::B2_dHg( const ADs& ReyNum_Liquid, const ADs& ReyNum_Liquid_dHg )
 {
    ADs X( 0.0 );
    X = 1.0 + 0.05 * fabs( ReyNum_Liquid ) / 350000.0;
    ADs re_liquid_abs_dHg( 0.0 );
-   re_liquid_abs_dHg = ReyNum_Abs_dHg( ReyNum_Liquid, ReyNum_dHg_Liquid );
+   re_liquid_abs_dHg = ReyNum_Abs_dHg( ReyNum_Liquid, ReyNum_Liquid_dHg );
 
    ADs X_dHg( 0.0 );
    X_dHg = 0.05 / 350000.0 * re_liquid_abs_dHg;
@@ -445,7 +471,7 @@ ADs EPRI_DF::C3( const ADs& C10, const ADs& B2 )
    ret = 2.0 * pow( C10/2.0, B2 );
    return ret;
 }
-ADS EPRI_DF::C3_dHg( const ADs& C10, const ADs& B2, const ADs& C10_dHg, const ADs& B2_dHg )
+ADs EPRI_DF::C3_dHg( const ADs& C10, const ADs& B2, const ADs& C10_dHg, const ADs& B2_dHg )
 {
    ADs c3( 0.0 );
    c3 = C3( C10, B2 );
@@ -526,93 +552,98 @@ ADs EPRI_DF::Vgj( const ADs& Density_Gas, const ADs& Density_Liquid,
    return ret;
 }
 
-ADs EPRI_DF::Vgj_dHg( const ADs& Density_Gas, const ADs& Density_Liquid,
-		      const ADs& ReyNum_Gas,  const ADs& ReyNum_Liquid,
-		      const ADs& j_Liquid,    const ADs& j_Liquid_CCFL,
-		      const ADs& Hg,          double     surface_tension,
-		      double     Dh,          double     g )
+ADs EPRI_DF::Vgj_dHg( const ADs& Density_Gas,     const ADs& Density_Liquid,
+		      const ADs& ReyNum_Gas,      const ADs& ReyNum_Liquid,
+		      const ADs& ReyNum_Gas_dHg,  const ADs& ReyNum_Liquid_dHg,
+		      const ADs& j_Liquid,        const ADs& j_Liquid_CCFL,
+		      const ADs& Hg,              double     surface_tension,
+		      double     Dh,              double     g )
 {
-   // ADs re( 0.0 );
-   // re = Re( ReyNum_Gas, ReyNum_Liquid );
-
-   // ADs a1( 0.0 );
-   // a1 = A1( re );
-
-   // ADs b1( 0.0 );
-   // b1 = B1( a1 );
-
-   // ADs c1x( 0.0 );
-   // c1x = C1x( b1 );
-
-   // // ADs c1( 0.0 );
-   // // c1 = C1( Hg, c1x );
-   
-   // ADs c1_dHg( 0.0 );
-   // c1_dHg = C1_dHg( Hg, c1x );
-
-   // ADs c5( 0.0 );
-   // c5 = C5( Density_Gas, Density_Liquid );
-
-   // ADs c2( 0.0 );
-   // c2 = C2( Density_Gas, Density_Liquid, c5 );
-
-   // ADs b2( 0.0 );
-   // b2 = B2( ReyNum_Liquid );
-
-   // ADs c10( 0.0 );
-   // c10 = C10( ReyNum_Gas, ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh );
-
-   // ADs c3( 0.0 );
-   // c3 = C3( c10, b2 );
-
-   // double c7 = C7( Dh );
-   // double c4 = C4( c7 );
-   
-   // ADs tmp( 0.0 );
-   // tmp = pow( (Density_Liquid-Density_Gas)*g*surface_tension/(Density_Liquid*Density_Liquid), 0.25 );
-   
-   // ADs ret( 0.0 );
-   // ret = 1.41 * tmp * c1_dHg * c2 * c3 * c4;
-   
-   // return ret;
-   
-   ADs vgj( 0.0 );
-   vgj = Vgj( Density_Gas, Density_Liquid, ReyNum_Gas, ReyNum_Liquid,
-   	      j_Liquid, j_Liquid_CCFL, Hg, surface_tension, Dh, g );
-
-   ADs re( 0.0 );
+   ADs re( 0.0 ), re_dHg( 0.0 );
    re = Re( ReyNum_Gas, ReyNum_Liquid );
+   re_dHg = Re_dHg( ReyNum_Gas_dHg, ReyNum_Liquid_dHg );
 
-   std::cout << "--- --- Check Re --- ---" << std::endl << re << std::endl;
+   // isEqual( re, re_dHg );
 
-   ADs a1( 0.0 );
+   ADs a1( 0.0 ), a1_dHg( 0.0 );
    a1 = A1( re );
+   a1_dHg = A1_dHg( re, re_dHg );
+   // isEqual( a1, a1_dHg );
 
-   ADs b1( 0.0 );
+   ADs b1( 0.0 ), b1_dHg( 0.0 );
    b1 = B1( a1 );
+   b1_dHg = B1_dHg( a1, a1_dHg );
+   // isEqual( b1, b1_dHg );
 
-   std::cout << "--- --- Check B1 --- ---" << std::endl << b1 << std::endl;
-
-   ADs c1x( 0.0 );
+   ADs c1x( 0.0 ), c1x_dHg( 0.0 );
    c1x = C1x( b1 );
+   c1x_dHg = C1x_dHg( b1_dHg );
+   // isEqual( c1x, c1x_dHg );
 
-   std::cout << "--- --- Check C1X --- ---" << std::endl << c1x << std::endl;   
-   
-   ADs c1( 0.0 );
+   ADs c1( 0.0 ), c1_dHg( 0.0 );
    c1 = C1( Hg, c1x );
+   c1_dHg = C1_dHg( Hg, c1x, c1, c1x_dHg );
+   // isEqual( c1, c1_dHg );
 
-   // std::cout << "--- --- Check C1 --- ---" << std::endl << c1 << std::endl;
+   ADs c5( 0.0 );
+   c5 = C5( Density_Gas, Density_Liquid );
 
-   ADs c1_dHg( 0.0 );
-   c1_dHg = C1_dHg( Hg, c1x );
+   ADs c2( 0.0 );
+   c2 = C2( Density_Gas, Density_Liquid, c5 );
 
-   // std::cout << "--- --- Check C1_dHg --- ---" << std::endl << c1_dHg << std::endl;
+   ADs b2( 0.0 ), b2_dHg( 0.0 );
+   b2 = B2( ReyNum_Liquid );
+   b2_dHg = B2_dHg( ReyNum_Liquid, ReyNum_Liquid_dHg );
+   // isEqual( b2, b2_dHg );
 
+   /* test zone begins */
+   /*
+   ADs jfrx( 0.0 ), gamma( 0.0 );
+   jfrx = Jfrx( j_Liquid, j_Liquid_CCFL );
+   gamma = Gamma( ReyNum_Gas, ReyNum_Liquid, jfrx, Dh );
+   
+   ADs c10_1( 0.0 ), c10_1_dHg( 0.0 );
+   c10_1 = C10_1( ReyNum_Liquid, gamma, Dh );
+   c10_1_dHg = C10_1_dHg( ReyNum_Liquid, gamma, Dh, ReyNum_Liquid_dHg );
+   // isEqual( c10_1, c10_1_dHg );
+
+   ADs c10_2( 0.0 ), c10_2_dHg( 0.0 );
+   c10_2 = C10_2( ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh );
+   c10_2_dHg = C10_2_dHg( ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh, ReyNum_Liquid_dHg );
+
+   // isEqual( c10_2, c10_2_dHg );
+   
+   ADs c10_3( 0,0 ), c10_3_dHg( 0,0 );
+   c10_3 = C10_3( ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh );
+   c10_3_dHg = C10_3_dHg( ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh, ReyNum_Liquid_dHg );
+   // isEqual( c10_3, c10_3_dHg );
+
+   */
+   /* end of test zone */
+   
+   ADs c10( 0.0 ), c10_dHg( 0.0 );
+   c10 = C10( ReyNum_Gas, ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh );
+   c10_dHg = C10_dHg( ReyNum_Gas, ReyNum_Liquid, ReyNum_Gas_dHg, ReyNum_Liquid_dHg,
+		      j_Liquid, j_Liquid_CCFL, Dh );
+
+   // isEqual( c10, c10_dHg );
+   
+   ADs c3( 0.0 ), c3_dHg( 0.0 );
+   c3 = C3( c10, b2 );
+   c3_dHg = C3_dHg( c10, b2, c10_dHg, b2_dHg );
+
+   double c7 = C7( Dh );
+   double c4 = C4( c7 );
+
+   ADs tmp( 0.0 );
+   tmp = pow( (Density_Liquid-Density_Gas)*g*surface_tension/(Density_Liquid*Density_Liquid), 0.25 );
+   
    ADs ret( 0.0 );
-   ret = vgj/c1 * c1_dHg;
+   ret = 1.41 * tmp * c2 * c4 * ( c1_dHg * c3 + c3_dHg * c1 );
 
    return ret;
 }
+
 
 ADs EPRI_DF::Z( const ADs& j_Liquid, const ADs& j_Liquid_CCFL )
 {
@@ -631,7 +662,7 @@ ADs EPRI_DF::Jfrx( const ADs& j_Liquid, const ADs& j_Liquid_CCFL )
    ADs ratio = j_Liquid / j_Liquid_CCFL;
 
    // std::cout << "--- Jfrx - ratio --- " << ratio << std::endl;
-   
+
    ADs ret( 0.0 );
    if( ratio.value() != 1.0 )
    {
@@ -647,9 +678,9 @@ ADs EPRI_DF::Gamma( const ADs& ReyNum_Gas, const ADs&ReyNum_Liquid,
    ret = std::pow( 8.0, 0.01905/Dh ) * ReyNum_Gas * Jfrx * exp( -10.0 / fabs( ReyNum_Liquid ) );
    return ret;
 }
-ADs Gamma_dHg( const ADs& ReyNum_Gas,     const ADs& ReyNum_Liquid,
-	       const ADS& ReyNum_Gas_dHg, const ADs& ReyNum_Liquid_dHg,
-	       const ADs& Jfrx,           double     Dh )
+ADs EPRI_DF::Gamma_dHg( const ADs& ReyNum_Gas,     const ADs& ReyNum_Liquid,
+			const ADs& ReyNum_Gas_dHg, const ADs& ReyNum_Liquid_dHg,
+			const ADs& Jfrx,           double     Dh )
 {
    ADs re_liquid_abs_dHg = ReyNum_Abs_dHg( ReyNum_Liquid, ReyNum_Liquid_dHg );
    ADs ret( 0.0 );
@@ -667,6 +698,20 @@ ADs EPRI_DF::C10_1( const ADs& ReyNum_Liquid, const ADs& gamma,
    ret = 2.0 * exp( pow( (-ReyNum_Liquid + gamma)/300000, 0.4 ) );
    return ret;
 }
+ADs EPRI_DF::C10_1_dHg( const ADs& ReyNum_Liquid, const ADs& gamma,
+			double     Dh,            const ADs& ReyNum_Liquid_dHg )
+{
+   ADs c10_1( 0.0 );
+   c10_1 = C10_1( ReyNum_Liquid, gamma, Dh );
+   ADs tmp( 0.0 );
+   tmp = ( -ReyNum_Liquid + gamma ) / 300000.0;
+
+   ADs ret( 0.0 );
+   ret = c10_1 * 0.4 * pow( tmp, 0.4-1.0 ) / (-300000.0) * ReyNum_Liquid_dHg;
+
+   return ret;
+}
+
 
 ADs EPRI_DF::C10_2( const ADs& ReyNum_Liquid, const ADs& j_Liquid,
 		    const ADs& j_Liquid_CCFL, double     Dh )
@@ -682,6 +727,28 @@ ADs EPRI_DF::C10_2( const ADs& ReyNum_Liquid, const ADs& j_Liquid,
 
    return ret;
 }
+ADs EPRI_DF::C10_2_dHg( const ADs& ReyNum_Liquid, const ADs& j_Liquid,
+			const ADs& j_Liquid_CCFL, double     Dh,
+			const ADs& ReyNum_Liquid_dHg )
+{
+   double c = 0.0381 / Dh;
+   c = c*c;
+
+   ADs jfrx( 0.0 );
+   jfrx = Jfrx( j_Liquid, j_Liquid_CCFL );
+
+   ADs tmp( 0.0 );
+   tmp = -c / ( 35000.0 * jfrx + 25000.0 );
+
+   ADs re_liquid_abs_dHg( 0.0 );
+   re_liquid_abs_dHg = ReyNum_Abs_dHg( ReyNum_Liquid, ReyNum_Liquid_dHg );
+
+   ADs ret( 0.0 );
+   ret = -1.72 * pow( fabs(ReyNum_Liquid), 0.035 ) * re_liquid_abs_dHg * exp( fabs(ReyNum_Liquid) * tmp ) * ( 0.035 / fabs(ReyNum_Liquid) + tmp );
+
+   return ret;
+}
+
 
 ADs EPRI_DF::C10_3( const ADs& ReyNum_Liquid, const ADs& j_Liquid,
 		    const ADs& j_Liquid_CCFL, double     Dh )
@@ -694,6 +761,22 @@ ADs EPRI_DF::C10_3( const ADs& ReyNum_Liquid, const ADs& j_Liquid,
    
    ADs ret( 0.0 );
    ret = ( 0.26*jfrx + 0.85*(1.0-jfrx) ) * c * pow( fabs(ReyNum_Liquid), 0.001 );
+   return ret;
+}
+
+ADs EPRI_DF::C10_3_dHg( const ADs& ReyNum_Liquid, const ADs& j_Liquid,
+			const ADs& j_Liquid_CCFL, double     Dh,
+			const ADs& ReyNum_Liquid_dHg )
+{
+   ADs c10_3( 0.0 );
+   c10_3 = C10_3( ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh );
+
+   ADs re_liquid_abs_dHg( 0.0 );
+   re_liquid_abs_dHg = ReyNum_Abs_dHg( ReyNum_Liquid, ReyNum_Liquid_dHg );
+
+   ADs ret( 0.0 );
+   ret = 0.001 * c10_3 / fabs(ReyNum_Liquid) * re_liquid_abs_dHg;
+
    return ret;
 }
 
@@ -726,6 +809,30 @@ ADs EPRI_DF::C10( const ADs& ReyNum_Gas, const ADs& ReyNum_Liquid,
    return ret;
 }
 
+ADs EPRI_DF::C10_dHg( const ADs& ReyNum_Gas,     const ADs& ReyNum_Liquid,
+		      const ADs& ReyNum_Gas_dHg, const ADs& ReyNum_Liquid_dHg,
+		      const ADs& j_Liquid,       const ADs& j_Liquid_CCFL,
+		      double     Dh)
+{
+   ADs jfrx( 0.0 );
+   jfrx = Jfrx( j_Liquid, j_Liquid_CCFL );
+   
+   ADs gamma( 0.0 );
+   gamma = Gamma( ReyNum_Gas, ReyNum_Liquid, jfrx, Dh );
 
+   ADs c10_1_dHg( 0.0 );
+   c10_1_dHg = C10_1_dHg( ReyNum_Liquid, gamma, Dh, ReyNum_Liquid_dHg );
+   
+   ADs c10_2_dHg( 0.0 );
+   c10_2_dHg = C10_2_dHg( ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh, ReyNum_Liquid_dHg );
+   
+   ADs c10_3_dHg( 0.0 );
+   c10_3_dHg = C10_3_dHg( ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh, ReyNum_Liquid_dHg );
+
+   ADs ret( 0.0 );
+   ret = c10_1_dHg + c10_2_dHg + c10_3_dHg;
+
+   return ret;
+}
 
 

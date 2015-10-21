@@ -38,18 +38,6 @@ void Solve22( std::vector<double>&                R,
    update[0] = ( R[0] - update[1]*J[0][1] ) / J[0][0];
 }
 
-void isEqual( const ADs& a, const ADs& b )
-{
-   if( a.derivative(0) == b.value() )
-   {
-      std::cout << "Equal: " << b.value() << std::endl;
-   }
-   else
-   {
-      std::cout << "NOT Equal: " << a.derivative(0) << "  |  " << b.value() << std::endl;
-   }
-}
-
 int main()
 {
    ADs density_liquid( 1000.0 ); // kg/m^3
@@ -125,46 +113,33 @@ int main()
       c0_dHg = epri.C0_dHg( density_gas, density_liquid, re_gas, re_liquid,
 			    re_gas_dHg, re_liquid_dHg, Hg );
 
-      isEqual( c0, c0_dHg );
-/*
+      // isEqual( c0, c0_dHg );
+
       ADs vgj( 0.0 ), vgj_dHg( 0.0 );
       vgj = epri.Vgj( density_gas, density_liquid, re_gas, re_liquid,
 		      j_liquid, j_liquid, Hg, surface_tension, diameter, g );
       vgj_dHg = epri.Vgj_dHg( density_gas, density_liquid, re_gas, re_liquid,
-			      j_liquid, j_liquid, Hg, surface_tension, diameter, g );
+			      re_gas_dHg, re_liquid_dHg, j_liquid, j_liquid,
+			      Hg, surface_tension, diameter, g );
 
-      std::cout << "Vgj --- " << std::endl << vgj << std::endl;
-      std::cout << "Vgj_dHg ---" << std::endl << vgj_dHg << std::endl;
+      // isEqual( vgj, vgj_dHg );
 
-
+      ADs HgVgj( 0.0 ), HgVgj_dHg( 0.0 );
+      HgVgj = Hg * vgj;
+      HgVgj_dHg = vgj + Hg * vgj_dHg;
+      // isEqual( HgVgj, HgVgj_dHg );
+      
+      ADs HgC0( 0.0 ), HgC0_dHg( 0.0 );
+      HgC0 = Hg * c0;
+      HgC0_dHg = c0 + Hg * c0_dHg;
+      // isEqual( HgC0, HgC0_dHg );
 
       ADv residual;
       residual.resize( 2, 0.0 );
 
       residual[0] = Hg * ( c0*j_liquid + vgj )/( 1.0 - Hg*c0 ) - j_gas;
+      residual[1] = j_liquid + HgVgj_dHg/HgC0_dHg * ( 1.0-HgC0 ) + HgVgj;
 
-      ADs tmp1( 0.0 );
-      tmp1 = Hg * vgj;
-      ADs tmp2( 0.0 );
-      tmp2 = Hg * c0;
-
-      residual[1] = j_liquid + tmp1.derivative(0)/tmp2.derivative(0) * ( 1.0-tmp2 ) + tmp1;
-
-      ADs HgC0_dHg( 0.0 );
-      HgC0_dHg = c0 + Hg * c0_dHg;
-
-      // std::cout << "Hg * C0 --- " << std::endl << tmp2 << std::endl;
-      // std::cout << "HgC0_dHg ---" << std::endl << HgC0_dHg << std::endl;
-
-      
-      ADs HgVgj_dHg( 0.0 );
-      HgVgj_dHg = vgj + Hg * vgj_dHg;
-
-      // std::cout << "Hg * Vgj --- " << std::endl << tmp1 << std::endl;
-      // std::cout << "HgVgj_dHg ---" << std::endl << HgVgj_dHg << std::endl;
-
-      // std::cout << "R0 | " << residual[0] << std::endl;
-      // std::cout << "R1 | " << residual[1] << std::endl;
 
       std::vector<double> R;
       R.resize( 2 );
@@ -203,13 +178,14 @@ int main()
       if( Hg > 1.0 ) Hg.value() = 0.999;
 
       residual_norm = std::sqrt( std::pow(residual[0].value(),2.0) + std::pow(residual[1].value(),2.0) );
-      // std::cout << "norm: " << residual_norm << std::endl;
+      std::cout << "norm: " << residual_norm << std::endl;
 
+      if( count > 10 ) break;
 
-      */      
    }
-   // while( residual_norm > 1.0E-03 );
-   while( false );
+   while( residual_norm > 1.0E-03 );
+   // while( false );
+   // while( count == 3 );
   
 
 
