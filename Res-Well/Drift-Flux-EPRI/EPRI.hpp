@@ -535,7 +535,7 @@ ADs EPRI_DF::Vgj( const ADs& Density_Gas, const ADs& Density_Liquid,
    ADs c10( 0.0 );
    c10 = C10( ReyNum_Gas, ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh );
 
-   std::cout << "--- Within Vgj: C10 = " << c10.value() << std::endl;
+   // std::cout << "--- Within Vgj: C10 = " << c10.value() << std::endl;
    
    ADs c3( 0.0 );
    c3 = C3( c10, b2 );
@@ -549,10 +549,10 @@ ADs EPRI_DF::Vgj( const ADs& Density_Gas, const ADs& Density_Liquid,
    ADs ret( 0.0 );
    ret = 1.41 * tmp * c1 * c2 * c3 * c4;
 
-   std::cout << "--- Within Vgj: C1 = " << c1.value() << std::endl;
-   std::cout << "--- Within Vgj: C2 = " << c2.value() << std::endl;
-   std::cout << "--- Within Vgj: C3 = " << c3.value() << std::endl;
-   std::cout << "--- Within Vgj: C4 = " << c4 << std::endl;
+   // std::cout << "--- Within Vgj: C1 = " << c1.value() << std::endl;
+   // std::cout << "--- Within Vgj: C2 = " << c2.value() << std::endl;
+   // std::cout << "--- Within Vgj: C3 = " << c3.value() << std::endl;
+   // std::cout << "--- Within Vgj: C4 = " << c4 << std::endl;
    
    
    return ret;
@@ -603,14 +603,16 @@ ADs EPRI_DF::Vgj_dHg( const ADs& Density_Gas,     const ADs& Density_Liquid,
    // isEqual( b2, b2_dHg );
 
    /* test zone begins */
-   /*
+//   /*
    ADs jfrx( 0.0 ), gamma( 0.0 );
    jfrx = Jfrx( j_Liquid, j_Liquid_CCFL );
    gamma = Gamma( ReyNum_Gas, ReyNum_Liquid, jfrx, Dh );
+   // std::cout << "--- Within C10_dHg: gamma " << std::endl << gamma << std::endl;   
    
    ADs c10_1( 0.0 ), c10_1_dHg( 0.0 );
    c10_1 = C10_1( ReyNum_Liquid, gamma, Dh );
    c10_1_dHg = C10_1_dHg( ReyNum_Liquid, gamma, Dh, ReyNum_Liquid_dHg );
+   // std::cout << "--- Within C10_dHg: ";
    // isEqual( c10_1, c10_1_dHg );
 
    ADs c10_2( 0.0 ), c10_2_dHg( 0.0 );
@@ -624,7 +626,7 @@ ADs EPRI_DF::Vgj_dHg( const ADs& Density_Gas,     const ADs& Density_Liquid,
    c10_3_dHg = C10_3_dHg( ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh, ReyNum_Liquid_dHg );
    // isEqual( c10_3, c10_3_dHg );
 
-   */
+//   */
    /* end of test zone */
    
    ADs c10( 0.0 ), c10_dHg( 0.0 );
@@ -700,20 +702,16 @@ ADs EPRI_DF::Gamma_dHg( const ADs& ReyNum_Gas,     const ADs& ReyNum_Liquid,
 ADs EPRI_DF::C10_1( const ADs& ReyNum_Liquid, const ADs& gamma,
 		    double     Dh )
 {
-   ADs tmp0( 0.0 );
-   tmp0 = (-ReyNum_Liquid + gamma)/350000.0;
-   
    ADs tmp( 0.0 );
    tmp = pow( (-ReyNum_Liquid + gamma)/350000.0, 0.4 );
    
    ADs ret( 0.0 );
    ret = 2.0 * exp( tmp );
    
-   std::cout << "--- --- --- Within C10_1: ReyNum = " << ReyNum_Liquid.value() << std::endl;
-   std::cout << "--- --- --- Within C10_1: Gamma = " << gamma.value() << std::endl;
-   std::cout << "--- --- --- Within C10_1: tmp0 = " << tmp0.value() << std::endl;
-   
-   std::cout << "--- --- --- Within C10_1: tmp = " << tmp.value() << std::endl;
+   // std::cout << "--- --- --- Within C10_1: ReyNum = " << ReyNum_Liquid.value() << std::endl;
+   // std::cout << "--- --- --- Within C10_1: Gamma = " << gamma.value() << std::endl;
+   // std::cout << "--- --- --- Within C10_1: tmp0 = " << tmp0.value() << std::endl;
+   // std::cout << "--- --- --- Within C10_1: tmp = " << tmp.value() << std::endl;
    
    return ret;
 }
@@ -725,8 +723,23 @@ ADs EPRI_DF::C10_1_dHg( const ADs& ReyNum_Liquid, const ADs& gamma,
    ADs tmp( 0.0 );
    tmp = ( -ReyNum_Liquid + gamma ) / 350000.0;
 
+   // test below
+   // std::cout << "Within C10_1_dHg: ReyNum_Liquid" << std::endl;
+   // isEqual( ReyNum_Liquid, ReyNum_Liquid_dHg );
+
+   
+   ADs test1( 0.0 );
+   test1 = pow( tmp, 0.4 );
+
+   ADs test2( 0.0 );
+   test2 = 0.4 * pow( tmp, 0.4-1.0 ) / (-350000.0) * ReyNum_Liquid_dHg;
+
+   // isEqual( test1, test2 );
+
+   // test above
+
    ADs ret( 0.0 );
-   ret = c10_1 * 0.4 * pow( tmp, 0.4-1.0 ) / (-300000.0) * ReyNum_Liquid_dHg;
+   ret = c10_1 * 0.4 * pow( tmp, 0.4-1.0 ) / (-350000.0) * ReyNum_Liquid_dHg;
 
    return ret;
 }
@@ -824,9 +837,9 @@ ADs EPRI_DF::C10( const ADs& ReyNum_Gas, const ADs& ReyNum_Liquid,
    ADs ret( 0.0 );
    ret = c10_1 + c10_2 + c10_3;
 
-   std::cout << "--- --- Within C10: C10_1 = " << c10_1.value() << std::endl;
-   std::cout << "--- --- Within C10: C10_2 = " << c10_2.value() << std::endl;
-   std::cout << "--- --- Within C10: C10_3 = " << c10_3.value() << std::endl;
+   // std::cout << "--- --- Within C10: C10_1 = " << c10_1.value() << std::endl;
+   // std::cout << "--- --- Within C10: C10_2 = " << c10_2.value() << std::endl;
+   // std::cout << "--- --- Within C10: C10_3 = " << c10_3.value() << std::endl;
    
    
    return ret;

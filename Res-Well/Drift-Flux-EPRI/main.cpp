@@ -41,12 +41,12 @@ void Solve22( std::vector<double>&                R,
 int main()
 {
    ADs density_liquid( 1000.0 ); // kg/m^3
-   ADs density_gas( 1.2 );
+   ADs density_gas( 1.184 );
 
    ADs viscosity_liquid( 1.0E-03 ); // Pa.s
    ADs viscosity_gas( 1.81E-05 );
 
-   double diameter = 0.1; // m
+   double diameter = 0.15; // m
    double g = 9.81; // m/s^2
    double surface_tension = 0.072; // N.m
 
@@ -56,7 +56,7 @@ int main()
    ADs density_diff( 0.0 );
    density_diff = density_liquid - density_gas;
 
-   ADs j_gas( 0.02 ); // m/s
+   ADs j_gas( 5.0 ); // m/s
    ADs j_liquid( 0.0 );
    ADs j_liquid_1( 0.0 );
    ADs j_liquid_2( 0.0 );
@@ -66,7 +66,7 @@ int main()
    j_liquid *= -1.0;
    j_liquid.make_independent( 1 );
    
-   ADs Hg( 0.35 );
+   ADs Hg( 0.5 );
    Hg.make_independent( 0 );
 
    std::cout << "Hg = " << Hg << std::endl;
@@ -81,6 +81,7 @@ int main()
    do
    {
       std::cout << "--------------------------------------------------- Iteration: "<< count++ << std::endl;
+      
       std::cout << "Hg = " << Hg.value() << std::endl;
       std::cout << "jL = " << j_liquid.value() << std::endl;
       
@@ -88,20 +89,19 @@ int main()
       u_gas =     epri.u_Gas(     j_gas, Hg );
       u_gas_dHg = epri.u_Gas_dHg( j_gas, Hg );
 
+      
       // isEqual( u_gas, u_gas_dHg );
       
       ADs u_liquid( 0.0 ), u_liquid_dHg( 0.0 );
       u_liquid =     epri.u_Liquid(     j_liquid, Hg );
       u_liquid_dHg = epri.u_Liquid_dHg( j_liquid, Hg );
 
-      // isEqual( u_liquid, u_liquid_dHg );
-      // std::cout << "u_liquid" << std::endl << u_liquid << std::endl;
-
       ADs re_gas( 0.0 ), re_gas_dHg( 0.0 );
       re_gas =     epri.ReyNum(     density_gas, u_gas,     viscosity_gas, diameter );
-      re_gas_dHg = epri.ReyNum_dHg( density_gas, u_gas_dHg, viscosity_gas, diameter );
+     re_gas_dHg = epri.ReyNum_dHg( density_gas, u_gas_dHg, viscosity_gas, diameter );
 
-      // isEqual( re_gas, re_gas_dHg );
+     // isEqual( re_gas, re_gas_dHg );
+
       
       ADs re_liquid( 0.0 ), re_liquid_dHg( 0.0 );
       re_liquid =     epri.ReyNum(     density_liquid, u_liquid,     viscosity_liquid, diameter );
@@ -117,20 +117,30 @@ int main()
       c0_dHg = epri.C0_dHg( density_gas, density_liquid, re_gas, re_liquid,
 			    re_gas_dHg,  re_liquid_dHg,  Hg );
 
-      // isEqual( c0, c0_dHg );
+      std::cout << "[ C0 ] ";
+      isEqual( c0, c0_dHg );
 
-      std::cout << "C0 = " << c0.value() << std::endl;
+      // std::cout << "C0 = " << c0.value() << std::endl;
 
       ADs vgj( 0.0 ), vgj_dHg( 0.0 );
       vgj =     epri.Vgj(     density_gas, density_liquid,  re_gas,   re_liquid,
 			      j_liquid,    j_liquid,
 			      Hg,          surface_tension, diameter, g );
+
+      // std::cout << "In main: re_liquid" << std::endl;
+      // isEqual( re_liquid, re_liquid_dHg );
+      
       vgj_dHg = epri.Vgj_dHg( density_gas, density_liquid,  re_gas,   re_liquid,
 			      re_gas_dHg,  re_liquid_dHg,   j_liquid, j_liquid,
 			      Hg,          surface_tension, diameter, g );
 
-      // isEqual( vgj, vgj_dHg );
-      std::cout << "Vgj = " << vgj.value() << std::endl;
+      std::cout << "[ Vgj ] ";
+      isEqual( vgj, vgj_dHg );
+      // std::cout << "Vgj = " << vgj.value() << std::endl;
+
+      ADs j_liquid_max( 0.0 );
+      j_liquid_max = -vgj / c0;
+      // std::cout << "Max j_liquid = " << j_liquid_max.value() << std::endl;
 
       ADs HgVgj( 0.0 ), HgVgj_dHg( 0.0 );
       HgVgj = Hg * vgj;
@@ -149,6 +159,7 @@ int main()
       residual[1] = j_liquid + HgVgj_dHg/HgC0_dHg * ( 1.0-HgC0 ) + HgVgj;
 
       residual_norm = std::sqrt( std::pow(residual[0].value(),2.0) + std::pow(residual[1].value(),2.0) );
+
       std::cout << "residual_norm =  " << residual_norm << std::endl;
 
       // if( count > 10 ) break;
@@ -178,8 +189,12 @@ int main()
 
       for( int i = 0; i < 2; ++i )
       {
-	 update[i] *= 0.2;
+	 update[i] *= 0.001;
       }
+      if( update[0] > 0.1 )
+	 update[0] = 0.1;
+      if( update[0] < -0.1 )
+	 update[0] = -0.1;
 
       // std::cout << "Hg_update: " << update[0] << std::endl;
       // std::cout << "jL_update: " << update[1] << std::endl;
@@ -192,16 +207,27 @@ int main()
       if( Hg.value() <= 0.0 ) Hg.value() = 0.001;
       if( Hg.value() >= 1.0 ) Hg.value() = 0.999;
 
+      if( std::abs(j_liquid.value()) > std::abs(j_liquid_max.value()) )
+      {
+	 j_liquid.value() = j_liquid_max.value();
+	 // std::cout << "j_liquid bounded..." << std::endl;
+      }
       if( j_liquid.value() >= 0.0 ) j_liquid.value() = -0.999;
 
 
-
+      if( count == 20 ) break;
    }
-   // while( residual_norm > 1.0E-03 );
+   while( residual_norm > 1.0E-04 );
    // while( false );
-   while( count < 40 );
-  
+   // while( count < 200 );
 
+   if( count < 200 )
+   {
+      // std::cout << "Converged..." << std::endl;
+      // std::cout << "Hg = " << Hg.value() << "  |  j_liquid = " << j_liquid.value() << "  |  j_gas = " << j_gas.value() << std::endl;
+   }
+   else
+      // std::cout << "Not converged" << std::endl;
 
    return 0;
 }
