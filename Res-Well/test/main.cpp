@@ -20,7 +20,7 @@ int main()
    ADs density_diff( 0.0 );
    density_diff = density_liquid - density_gas;
 
-   ADs j_liquid( -0.05 ); // m/s
+   ADs j_liquid( -0.05000334 ); // m/s
    ADs j_gas( 0.0 );
    // ADs j_gas_1( 0.0 );
    // ADs j_gas_2( 0.0 );
@@ -30,10 +30,10 @@ int main()
    // j_liquid *= -1.0;
    // j_gas.make_independent( 0 );
 
-   ADs Hg( 0.5 );
+   ADs Hg( 0.49875676 );
    Hg.make_independent( 0 );
    
-   j_gas = 0.00221;
+   j_gas = 0.0221;
 
    std::cout << "Hg = " << Hg << std::endl;
    std::cout << "jG = " << j_gas<< std::endl;
@@ -60,15 +60,21 @@ int main()
       re_gas = epri.ReyNum(    density_gas,    j_gas,    viscosity_gas,    diameter);
       re_liquid = epri.ReyNum( density_liquid, j_liquid, viscosity_liquid, diameter);
 
+      // std::cout << "density_gas = " <<density_gas << std::endl;
+      // std::cout << "density_liquid = " <<density_liquid << std::endl;
+      // std::cout << "re_gas = " <<re_gas << std::endl;
+      // std::cout << "re_liquid = " <<re_liquid << std::endl;
+      // std::cout << "Hg = " << Hg << std::endl;
+      
       ADs c0( 0.0 );
       c0 = epri.C0( density_gas, density_liquid, re_gas, re_liquid, Hg );
-      // std::cout << "C0 =  " << c0 << std::endl;
+      std::cout << "C0 =  " << c0 << std::endl;
 
       ADs vgj( 0.0 );
       vgj = epri.Vgj( density_gas, density_liquid,  re_gas,   re_liquid,
 		      j_liquid,    j_liquid,
 		      Hg,          surface_tension, diameter, g );
-      // std::cout << "Vgj =  " << vgj.value() << std::endl;
+      std::cout << "Vgj =  " << vgj << std::endl;
       // double j_liquid_max( 0.0 );
       // j_liquid_max = -vgj.value() / c0.value();
       // std::cout << "j_liquid_max =  " << j_liquid_max << std::endl;

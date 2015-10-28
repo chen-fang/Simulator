@@ -191,7 +191,18 @@ ADs EPRI_DF::C0( const ADs& Density_Gas, const ADs& Density_Liquid,
    k0 = K0( Density_Gas, Density_Liquid, b1 );
 
    ADs r( 0.0 );
-   r = R( Density_Gas, Density_Liquid, b1 );   
+   r = R( Density_Gas, Density_Liquid, b1 );
+
+   // std::cout << "--- Within C0: [ re ] --- " << std::endl << re << std::endl;
+   // std::cout << "--- Within C0: [ a1 ] --- " << std::endl << a1 << std::endl;
+   // std::cout << "--- Within C0: [ b1 ] --- " << std::endl << b1 << std::endl;
+   // printf( "--- Within C0: re = %12.10f\n", re.value() );
+   // printf( "--- Within C0: a1 = %12.10f\n", a1.value() );
+   // printf( "--- Within C0: b1 = %12.10f\n", b1.value() );
+   
+   // std::cout << "--- Within C0: [ L ] --- " << std::endl << l << std::endl;
+   // std::cout << "--- Within C0: [ K0 ] --- " << std::endl << k0 << std::endl;
+   // std::cout << "--- Within C0: [ r ] --- " << std::endl << r << std::endl;
    
    ADs ret( 0.0 );
    ret = l / ( k0 + (1.0-k0) * pow( Hg, r ) );
@@ -440,17 +451,29 @@ ADs EPRI_DF::C10( const ADs& ReyNum_Gas, const ADs& ReyNum_Liquid,
    // ADs ret( 0.0 );
    // ret = c10_1 + c10_2 + c10_3;
 
-   // std::cout << "--- --- Within C10: C10_1 = " << c10_1.value() << std::endl;
-   // std::cout << "--- --- Within C10: C10_2 = " << c10_2.value() << std::endl;
-   // std::cout << "--- --- Within C10: C10_3 = " << c10_3.value() << std::endl;
 
    ADs re_liquid_abs( 0.0 );
    re_liquid_abs = fabs( ReyNum_Liquid );
 
    double c = 0.0381 / Dh;
+
+   ADs c10_1( 0.0 );
+   c10_1 = 2.0*exp(pow( re_liquid_abs/300000.0, 0.4 ));
+
+   ADs c10_2( 0.0 );
+   c10_2 = - 1.7*pow( re_liquid_abs, 0.035 )*exp(-re_liquid_abs/25000.0*c*c);
+
+   ADs c10_3( 0.0 );
+   c10_3 = 0.85*std::pow( c, 0.1 )*pow( re_liquid_abs, 0.001 );
+
+   // std::cout << "--- --- Within C10: C10_1 = " << c10_1.value() << std::endl;
+   // std::cout << "--- --- Within C10: C10_2 = " << c10_2.value() << std::endl;
+   // std::cout << "--- --- Within C10: C10_3 = " << c10_3.value() << std::endl;
+
    
    ADs ret( 0.0 );
-   ret = 2.0*exp(pow( re_liquid_abs/300000.0, 0.4 )) - 1.7*pow( re_liquid_abs, 0.035 )*exp(-re_liquid_abs/25000.0*c*c) + 0.85*std::pow( c, 0.1 )*pow( re_liquid_abs, 0.001 );
+   ret = c10_1 + c10_2 + c10_3;
+   // ret = 2.0*exp(pow( re_liquid_abs/300000.0, 0.4 )) - 1.7*pow( re_liquid_abs, 0.035 )*exp(-re_liquid_abs/25000.0*c*c) + 0.85*std::pow( c, 0.1 )*pow( re_liquid_abs, 0.001 );
    
    return ret;
 }
