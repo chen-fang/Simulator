@@ -33,9 +33,9 @@ struct EPRI_DF
    ADs L_dHg( const ADs& Hg );
 
    //
-   ADs ReyNum(         const ADs& density,   const ADs& velocity,
+   ADs ReyNum(         const ADs& density,   const ADs& Vs,
 		       const ADs& viscosity, double     diameter );
-   ADs ReyNum_dHg(     const ADs& density,   const ADs& velocity_dHg,
+   ADs ReyNum_dHg(     const ADs& density,   const ADs& Vs,
 		       const ADs& viscosity, double     diameter );
    ADs ReyNum_Abs_dHg( const ADs& ReyNum,    const ADs& ReyNum_dHg );
 
@@ -204,18 +204,18 @@ ADs EPRI_DF::L_dHg( const ADs& Hg )
    return ret;   
 }
 
-ADs EPRI_DF::ReyNum( const ADs& density,   const ADs& velocity,
+ADs EPRI_DF::ReyNum( const ADs& density,   const ADs& Vs,
 		     const ADs& viscosity, double     diameter )
 {
    ADs ret( 0.0 );
-   ret = density*velocity*diameter/viscosity;
+   ret = density*Vs*diameter/viscosity;
    return ret;
 }
-ADs EPRI_DF::ReyNum_dHg( const ADs& density,   const ADs& velocity_dHg,
+ADs EPRI_DF::ReyNum_dHg( const ADs& density,   const ADs& Vs,
 			 const ADs& viscosity, double     diameter )
 {
    ADs ret( 0.0 );
-   ret = density*velocity_dHg*diameter/viscosity;
+   ret = density*Vs.derivative(0)*diameter/viscosity;
    return ret;
 }
 ADs EPRI_DF::ReyNum_Abs_dHg( const ADs& ReyNum, const ADs& ReyNum_dHg )

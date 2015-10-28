@@ -97,15 +97,15 @@ int main()
       u_liquid_dHg = epri.u_Liquid_dHg( j_liquid, Hg );
 
       ADs re_gas( 0.0 ), re_gas_dHg( 0.0 );
-      re_gas =     epri.ReyNum(     density_gas, u_gas,     viscosity_gas, diameter );
-     re_gas_dHg = epri.ReyNum_dHg( density_gas, u_gas_dHg, viscosity_gas, diameter );
+      re_gas =     epri.ReyNum(     density_gas, j_gas, viscosity_gas, diameter );
+      re_gas_dHg = epri.ReyNum_dHg( density_gas, j_gas, viscosity_gas, diameter );
 
-     // isEqual( re_gas, re_gas_dHg );
+      // isEqual( re_gas, re_gas_dHg );
 
       
       ADs re_liquid( 0.0 ), re_liquid_dHg( 0.0 );
-      re_liquid =     epri.ReyNum(     density_liquid, u_liquid,     viscosity_liquid, diameter );
-      re_liquid_dHg = epri.ReyNum_dHg( density_liquid, u_liquid_dHg, viscosity_liquid, diameter );
+      re_liquid =     epri.ReyNum(     density_liquid, j_liquid, viscosity_liquid, diameter );
+      re_liquid_dHg = epri.ReyNum_dHg( density_liquid, j_liquid, viscosity_liquid, diameter );
 
       // isEqual( re_liquid, re_liquid_dHg );
 
