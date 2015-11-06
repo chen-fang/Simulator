@@ -20,7 +20,7 @@ int main()
    ADs density_diff( 0.0 );
    density_diff = density_liquid - density_gas;
 
-   ADs j_liquid( -0.05000334 ); // m/s
+   ADs j_liquid( -0.02 ); // m/s
    ADs j_gas( 0.0 );
    // ADs j_gas_1( 0.0 );
    // ADs j_gas_2( 0.0 );
@@ -30,14 +30,10 @@ int main()
    // j_liquid *= -1.0;
    // j_gas.make_independent( 0 );
 
-   ADs Hg( 0.49875676 );
+   ADs Hg( 0.5 );
    Hg.make_independent( 0 );
    
    j_gas = 0.0221;
-
-   std::cout << "Hg = " << Hg << std::endl;
-   std::cout << "jG = " << j_gas<< std::endl;
-   std::cout << "jL = " << j_liquid << std::endl;
 
    EPRI_DF epri;
    double residual_norm;
@@ -46,7 +42,11 @@ int main()
    {
       //std::cout << "--------------------------------------------------- Iteration: "<< count << std::endl;
 
-      j_gas += 0.00;
+      j_gas += 0.0000;
+
+      std::cout << "Hg = " << Hg.value() << std::endl;
+      std::cout << "jG = " << j_gas.value() << std::endl;
+      std::cout << "jL = " << j_liquid.value() << std::endl;
 
       ADs u_gas( 0.0 );
       u_gas = epri.u_Gas( j_gas, Hg );
@@ -68,13 +68,13 @@ int main()
       
       ADs c0( 0.0 );
       c0 = epri.C0( density_gas, density_liquid, re_gas, re_liquid, Hg );
-      std::cout << "C0 =  " << c0 << std::endl;
+      // std::cout << "C0 =  " << c0 << std::endl;
 
       ADs vgj( 0.0 );
       vgj = epri.Vgj( density_gas, density_liquid,  re_gas,   re_liquid,
 		      j_liquid,    j_liquid,
 		      Hg,          surface_tension, diameter, g );
-      std::cout << "Vgj =  " << vgj << std::endl;
+      // std::cout << "Vgj =  " << vgj << std::endl;
       // double j_liquid_max( 0.0 );
       // j_liquid_max = -vgj.value() / c0.value();
       // std::cout << "j_liquid_max =  " << j_liquid_max << std::endl;
@@ -86,10 +86,8 @@ int main()
       HgC0 = Hg * c0;
 
       ADs residual( 0.0 );
-
       residual = c0 * j_liquid + vgj - j_gas * (1.0-Hg*c0) / Hg;
-
-      printf( "jL = %7.4f  |  Hg = %3.1f  |  jG = %7.4f  |  residual = %7.4f\n", j_liquid.value(), Hg.value(), j_gas.value(), residual.value() );
+      // printf( "jL = %7.4f  |  Hg = %3.1f  |  jG = %7.4f  |  residual = %7.4f\n", j_liquid.value(), Hg.value(), j_gas.value(), residual.value() );
 
       
       ADs R1( 0.0 ), R2( 0.0 );
@@ -99,8 +97,7 @@ int main()
       tmp2 = Hg * c0;
       R2 = j_liquid + tmp1.derivative(0)/tmp2.derivative(0) * ( 1.0-Hg*c0 ) + Hg*vgj;
 
-      std::cout << "R1 = " << R1.value() << std::endl;
-      std::cout << "R2 = " << R2.value() << std::endl;
+      printf( "R1 = %12.10f  |  R2 = %12.10f\n", R1.value(), R2.value() );
 
       // residual_norm = std::abs( residual.value() );
 

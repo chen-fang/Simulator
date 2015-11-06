@@ -56,29 +56,41 @@ int main()
    ADs density_diff( 0.0 );
    density_diff = density_liquid - density_gas;
 
-   ADs j_gas( 0.022 ); // m/s
-   j_gas.make_independent( 1 );
-   ADs j_liquid( 0.0 );
-   // ADs j_liquid_1( 0.0 );
-   // ADs j_liquid_2( 0.0 );
-   // j_liquid_1 = pow( g*diameter*density_diff, 0.25 );
-   // j_liquid_2 = pow( density_gas, 0.25 ) * pow( j_gas, 0.5 );
-   // j_liquid = pow( ( C*j_liquid_1-j_liquid_2)/m, 2.0 ) / pow( density_liquid, 0.5 );
-   // j_liquid *= -1.0;
-   j_liquid = -0.05;
-   //j_liquid.make_independent( 1 );
+   /* Note:
+    * Give & fix j_gas, solve for Hg & j_liquid
+    */
    
-   ADs Hg( 0.5 );
+   // ADs j_gas( 0.022107 ); // m/s
+   ADs j_gas( 0.29 ); // m/s
+   // j_gas.make_independent( 1 );
+   ADs j_liquid( 0.0 );
+
+/*   
+   // --- Use Wallis correlation for initial guess ---
+   ADs j_liquid_1( 0.0 );
+   ADs j_liquid_2( 0.0 );
+   j_liquid_1 = pow( g*diameter*density_diff, 0.25 );
+   j_liquid_2 = pow( density_gas, 0.25 ) * pow( j_gas, 0.5 );
+   j_liquid = pow( ( C*j_liquid_1-j_liquid_2)/m, 2.0 ) / pow( density_liquid, 0.5 );
+   j_liquid *= -1.0;
+*/
+   
+   // j_liquid = -0.05;
+   j_liquid = -0.02;
+   j_liquid.make_independent( 1 );
+   
+   // ADs Hg( 0.5 );
+   ADs Hg( 0.9 );
    Hg.make_independent( 0 );
 
    EPRI_DF epri;
    double residual_norm;
 
-   for( int count = 0; count < 10; ++count )
+   for( int count = 0; count < 20; ++count )
    {
       std::cout << "--------------------------------------------------- Iteration: "<< count << std::endl;
       
-      std::cout << "jL = " << j_liquid.value() << std::endl;
+      printf( "jL = %10.6f\n", j_liquid.value() );
       printf( "Hg = %10.6f\n", Hg.value() );
       printf( "jG = %10.6f\n", j_gas.value() );
       
@@ -179,21 +191,21 @@ int main()
 
       for( int i = 0; i < 2; ++i )
       {
-	 // update[i] *= 0.001;
+	 // update[i] *= 0.1;
       }
       std::cout << "Hg_update: " << update[0] << std::endl;
-      std::cout << "jG_update: " << update[1] << std::endl;
+      std::cout << "jL_update: " << update[1] << std::endl;
 
       Hg = Hg - update[0];
-      j_gas = j_gas - update[1];
+      j_liquid = j_liquid - update[1];
 
       // std::cout << Hg << std::endl;
 
-      if( Hg.value() < 0.49 ) Hg.value() = 0.49;
-      if( Hg.value() > 0.51 ) Hg.value() = 0.51;
+      // if( Hg.value() < 0.49 ) Hg.value() = 0.49;
+      // if( Hg.value() > 0.51 ) Hg.value() = 0.51;
 
-      if( j_gas.value() < 0.0220 ) j_gas.value() = 0.0220;
-      if( j_gas.value() > 0.0222 ) j_gas.value() = 0.0222;
+      // if( j_gas.value() < 0.0220 ) j_gas.value() = 0.0220;
+      // if( j_gas.value() > 0.0222 ) j_gas.value() = 0.0222;
 
       // if( std::abs(j_liquid.value()) > std::abs(j_liquid_max.value()) )
       // {
