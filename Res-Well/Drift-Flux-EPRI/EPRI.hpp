@@ -533,7 +533,7 @@ ADs EPRI_DF::Vgj( const ADs& Density_Gas, const ADs& Density_Liquid,
    ADs c1( 0.0 );
    c1 = C1( Hg, c1x );
 
-   // std::cout << "--- c1 --- " << c1 << std::endl;
+   // std::cout << "--- C1 --- " << c1 << std::endl;
 
    ADs c5( 0.0 );
    c5 = C5( Density_Gas, Density_Liquid );
@@ -617,16 +617,16 @@ ADs EPRI_DF::Vgj_dHg( const ADs& Density_Gas,     const ADs& Density_Liquid,
    // isEqual( b2, b2_dHg );
 
    /* test zone begins */
-//   /*
+   /*
    ADs jfrx( 0.0 ), gamma( 0.0 );
    jfrx = Jfrx( j_Liquid, j_Liquid_CCFL );
    gamma = Gamma( ReyNum_Gas, ReyNum_Liquid, jfrx, Dh );
-   // std::cout << "--- Within C10_dHg: gamma " << std::endl << gamma << std::endl;   
+   std::cout << "--- Within C10_dHg: gamma " << std::endl << gamma << std::endl;   
    
    ADs c10_1( 0.0 ), c10_1_dHg( 0.0 );
    c10_1 = C10_1( ReyNum_Liquid, gamma, Dh );
    c10_1_dHg = C10_1_dHg( ReyNum_Liquid, gamma, Dh, ReyNum_Liquid_dHg );
-   // std::cout << "--- Within C10_dHg: ";
+   std::cout << "--- Within C10_dHg: ";
    // isEqual( c10_1, c10_1_dHg );
 
    ADs c10_2( 0.0 ), c10_2_dHg( 0.0 );
@@ -640,7 +640,7 @@ ADs EPRI_DF::Vgj_dHg( const ADs& Density_Gas,     const ADs& Density_Liquid,
    c10_3_dHg = C10_3_dHg( ReyNum_Liquid, j_Liquid, j_Liquid_CCFL, Dh, ReyNum_Liquid_dHg );
    // isEqual( c10_3, c10_3_dHg );
 
-//   */
+   */
    /* end of test zone */
    
    ADs c10( 0.0 ), c10_dHg( 0.0 );
@@ -683,12 +683,14 @@ ADs EPRI_DF::Jfrx( const ADs& j_Liquid, const ADs& j_Liquid_CCFL )
    ADs z = Z( j_Liquid, j_Liquid_CCFL );
    ADs ratio = j_Liquid / j_Liquid_CCFL;
 
-   // std::cout << "--- Jfrx - ratio --- " << ratio << std::endl;
+   //std::cout << "--- Jfrx - ratio --- " << ratio << std::endl;
+   //std::cout << "--- Jfrx - Z     --- " << z << std::endl;
 
    ADs ret( 0.0 );
    if( ratio.value() != 1.0 )
    {
       ret = pow( 1.0-ratio, z );
+      //std::cout << "--- Jfrx - ret     --- " << ret << std::endl;
    }
    return ret;
 }
@@ -833,6 +835,8 @@ ADs EPRI_DF::C10( const ADs& ReyNum_Gas, const ADs& ReyNum_Liquid,
    ADs jfrx( 0.0 );
    jfrx = Jfrx( j_Liquid, j_Liquid_CCFL );
 
+   // std::cout << "--- j_Liquid --- " << j_Liquid << std::endl;
+   // std::cout << "--- j_Liquid_CCFL --- " << j_Liquid_CCFL << std::endl;
    // std::cout << "--- Jfrx --- " << jfrx << std::endl;
    
    ADs gamma( 0.0 );
