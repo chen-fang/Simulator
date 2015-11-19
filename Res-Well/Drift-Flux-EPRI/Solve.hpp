@@ -19,12 +19,6 @@ struct Solve
 			       double diameter,  double g, double surface_tension,
 			       const ADs& j_gas, const ADs& j_liquid_CCFL,
 			       const ADs& Hg,          ADs& j_liquid       );
-
-   static ADs Get_Residual_forTest( const ADs& dens_gas, const ADs& dens_liquid,
-			       const ADs& vis_gas,  const ADs& vis_liquid,
-			       double diameter,  double g, double surface_tension,
-			       const ADs& j_gas, const ADs& j_liquid_CCFL,
-			       const ADs& Hg,          ADs& j_liquid       );
 };
 
 void Solve::extract22( const ADv& residual, Vector& R, vector<Vector>& J )
@@ -248,48 +242,4 @@ void Solve::Solve_j_liquid( const ADs& dens_gas, const ADs& dens_liquid,
       j_liquid = j_liquid - update;
 
    }
-}
-
-ADs Solve::Get_Residual_forTest( const ADs& dens_gas, const ADs& dens_liquid,
-				  const ADs& vis_gas,  const ADs& vis_liquid,
-				  double diameter,  double g, double surface_tension,
-				  const ADs& j_gas, const ADs& j_liquid_CCFL,
-				  const ADs& Hg,          ADs& j_liquid       )
-{
-   EPRI_DF epri;
-
-   ADs u_gas( 0.0 ), u_gas_dHg( 0.0 );
-   u_gas =     epri.u_Gas(     j_gas, Hg );
-   u_gas_dHg = epri.u_Gas_dHg( j_gas, Hg );
-      
-   ADs u_liquid( 0.0 ), u_liquid_dHg( 0.0 );
-   u_liquid =     epri.u_Liquid(     j_liquid, Hg );
-   u_liquid_dHg = epri.u_Liquid_dHg( j_liquid, Hg );
-
-   ADs re_gas( 0.0 ), re_gas_dHg( 0.0 );
-   re_gas =     epri.ReyNum(     dens_gas, j_gas, vis_gas, diameter );
-   re_gas_dHg = epri.ReyNum_dHg( dens_gas, j_gas, vis_gas, diameter );
-      
-   ADs re_liquid( 0.0 ), re_liquid_dHg( 0.0 );
-   re_liquid =     epri.ReyNum(     dens_liquid, j_liquid, vis_liquid, diameter );
-   re_liquid_dHg = epri.ReyNum_dHg( dens_liquid, j_liquid, vis_liquid, diameter );
-
-   ADs c0( 0.0 );
-   c0 = epri.C0( dens_gas, dens_liquid, re_gas, re_liquid, Hg );
-
-   ADs vgj( 0.0 );
-   vgj = epri.Vgj( dens_gas, dens_liquid,  re_gas,   re_liquid,
-		   j_liquid,    j_liquid_CCFL,
-		   Hg,          surface_tension, diameter, g );
-
-   ADs HgVgj( 0.0 );
-   HgVgj = Hg * vgj;
-      
-   ADs HgC0( 0.0 );
-   HgC0 = Hg * c0;
-
-   ADs residual( 0.0 );
-   residual = Hg * ( c0*j_liquid + vgj )/( 1.0 - Hg*c0 ) - j_gas;
-
-   return residual;
 }
