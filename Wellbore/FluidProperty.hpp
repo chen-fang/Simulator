@@ -5,90 +5,94 @@
 #include "adetl/scalars/ADscalar.hpp"
 #include "adetl/systems/ADvector.hpp"
 
-typedef adetl::ADscalar<> ADscalar;
-typedef adetl::ADvector   ADvector;
+typedef adetl::ADscalar<> ADs;
+typedef adetl::ADvector   ADv;
 
 using std::vector;
 
 
-struct ConstProperty
+struct ConstFluidProperty
 {
+   /** reference pressure **///------------------------------------------------------------
+   const ADs Pb = 14.7; // psi
+
    /** compressibility **///---------------------------------------------------------------
-   const ADscalar Co = 1.0E-05;
-   const ADscalar Cw = 3.0E-06;
+   const ADs Co = 1.0E-05;
+   const ADs Cw = 3.0E-06;
 
    /** viscosoty **///---------------------------------------------------------------------
-   const ADscalar VisO = 1.1;
-   const ADscalar VisW = 0.8;
+   const ADs VisO = 1.1;
+   const ADs VisW = 0.8;
 
    /** volume factor **///-----------------------------------------------------------------
-   const ADscalar Bob = 1.0;
-   const ADscalar Bwb = 1.0;
+   const ADs Bob = 1.0;
+   const ADs Bwb = 1.0;
 
    /** density **///----------------------------------------------------------------------
-   ADscalar DensOil_sc = 53;  // [ lbm/ft3 ]
-   ADscalar DensWat_sc = 65;  // [ lbm/ft3 ]
+   ADs DensOil_sc = 53;  // [ lbm/ft3 ]
+   ADs DensWat_sc = 65;  // [ lbm/ft3 ]
 };
 
-struct PROPERTY
+struct FluidProperty
 {
-   static ADscalar Pw ( const ADscalar& _Po )
+   static ADs Bo( const ADs& Po,
+		  const ADs& Bob, const ADs& Co, const ADs& Pb )
    {
-      ADscalar ret( 0.0 );
-      ret = _Po;
+      ADs ret( 0.0 );
+      ret = Bob * ( 1.0 - Co * ( Po - Pb ) );
       return ret;
    }
 
-   static ADscalar Bo ( const ADscalar& _Po,
-			const ADscalar& _Bob, const ADscalar& _Co, const ADscalar& _Pb )
+   static ADs Bw( const ADs& Pw,
+		  const ADs& Bwb, const ADs& Cw, const ADs& Pb )
    {
-      ADscalar ret( 0.0 );
-      ret = _Bob * ( 1.0 - _Co * ( _Po - _Pb ) );
-      return ret;
-   }
-   static ADscalar Bw ( const ADscalar& _Pw,
-			const ADscalar& _Bwb, const ADscalar& _Cw, const ADscalar& _Pb )
-   {
-      ADscalar ret( 0.0 );
-      ret = _Bwb * ( 1.0 - _Cw * ( _Pw - _Pb ) );
+      ADs ret( 0.0 );
+      ret = Bwb * ( 1.0 - Cw * ( Pw - Pb ) );
       return ret;
    }
 
-   static ADscalar Density_Oil ( const ADscalar& _Bo,
-				 const ADscalar& _DensOil_sc )
+   static ADs Density_Oil( const ADs& Bo,
+			   const ADs& DensOil_sc )
    {
-      ADscalar ret( 0.0 );
-      ret = _DensOil_sc / _Bo;
+      ADs ret( 0.0 );
+      ret = DensOil_sc / Bo;
       return ret;
    }
 
-   static ADscalar Density_Wat ( const ADscalar& _Bw,
-				 const ADscalar& _DensWat_sc )
+   static ADs Density_Wat ( const ADs& Bw,
+			    const ADs& DensWat_sc )
    {
-      ADscalar ret( 0.0 );
-      ret = _DensWat_sc / _Bw;
+      ADs ret( 0.0 );
+      ret = DensWat_sc / Bw;
+      return ret;
+   }
+
+   /** Two-Phase Mixture Density **///-------------------------------------------------------
+   static ADs Density_Mix( const ADs& dens_oil, const ADs& dens_wat, const ADs& oil_frac )
+   {
+      ADs ret( 0.0 );
+      ret = dens_oil * oil_frac + dens_wat * ( 1.0 - oil_frac );
       return ret;
    }
 
    /** Specific Weight **///-----------------------------------------------------------------
-   static ADscalar SpecificWeight ( const ADscalar& _density )
+   static ADs SpecificWeight( const ADs& density )
    {
-      ADscalar ret( 0.0 );
-      ret = _density / 144.0;
+      ADs ret( 0.0 );
+      ret = density / 144.0;
       return ret;
    }
 
-
    // /** Potential **///-----------------------------------------------------------------------
-   // static ADscalar Potential ( const ADscalar& _pressure_1, const ADscalar& _pressure_2,
-   // 			       const ADscalar& _spec_weight, double _del_depth )
+   // static ADs Potential( const ADs& _pressure_1, const ADs& _pressure_2,
+   // 			       const ADs& _spec_weight, double _del_depth )
    // {
-   //    ADscalar ret( 0.0 );
+   //    ADs ret( 0.0 );
    //    ret = _pressure_1 - _pressure_2 - _spec_weight * _del_depth;
    //    return ret;
    // }
 
-   // static double Potential ( double _pressure_1, double _pressure_2,
+   // static double Potential( double _pressure_1, double _pressure_2,
    // 			     double _spec_weight, double _del_depth )
    // {
    //    return ( _pressure_1 - _pressure_2 - _spec_weight * _del_depth );
