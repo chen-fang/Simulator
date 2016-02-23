@@ -10,8 +10,7 @@ typedef adetl::ADvector   ADv;
 
 using std::vector;
 
-
-struct ConstFluidProperty
+struct FluidProperty
 {
    /** reference pressure **///------------------------------------------------------------
    const ADs Pb = 14.7; // psi
@@ -31,36 +30,48 @@ struct ConstFluidProperty
    /** density **///----------------------------------------------------------------------
    ADs DensOil_sc = 53;  // [ lbm/ft3 ]
    ADs DensWat_sc = 65;  // [ lbm/ft3 ]
-};
 
-struct FluidProperty
-{
-   static ADs Bo( const ADs& Po,
-		  const ADs& Bob, const ADs& Co, const ADs& Pb )
+
+   static ADs Bo( const ADs& Po )
    {
       ADs ret( 0.0 );
       ret = Bob * ( 1.0 - Co * ( Po - Pb ) );
       return ret;
    }
 
-   static ADs Bw( const ADs& Pw,
-		  const ADs& Bwb, const ADs& Cw, const ADs& Pb )
+   static ADs Bw( const ADs& Pw )
    {
       ADs ret( 0.0 );
       ret = Bwb * ( 1.0 - Cw * ( Pw - Pb ) );
       return ret;
    }
 
-   static ADs Density_Oil( const ADs& Bo,
-			   const ADs& DensOil_sc )
+   static ADs Density_Oil( const ADs& Po )
+   {
+      ADs Bo( 0.0 );
+      Bo = Bo( Po );
+      ADs ret( 0.0 );
+      ret = DensOil_sc / Bo;
+      return ret;
+   }
+
+   static ADs Density_Oil( const ADs& Bo )
    {
       ADs ret( 0.0 );
       ret = DensOil_sc / Bo;
       return ret;
    }
 
-   static ADs Density_Wat ( const ADs& Bw,
-			    const ADs& DensWat_sc )
+   static ADs Density_Wat ( const ADs& Pw )
+   {
+      ADs Bw( 0.0 );
+      Bw = Bw( Pw );
+      ADs ret( 0.0 );
+      ret = DensWat_sc / Bw;
+      return ret;
+   }
+
+   static ADs Density_Wat ( const ADs& Bw )
    {
       ADs ret( 0.0 );
       ret = DensWat_sc / Bw;
@@ -68,10 +79,10 @@ struct FluidProperty
    }
 
    /** Two-Phase Mixture Density **///-------------------------------------------------------
-   static ADs Density_Mix( const ADs& dens_oil, const ADs& dens_wat, const ADs& oil_frac )
+   static ADs Density_Mix( const ADs& denL, const ADs& denG, const ADs& Hg )
    {
       ADs ret( 0.0 );
-      ret = dens_oil * oil_frac + dens_wat * ( 1.0 - oil_frac );
+      ret = denL * ( 1.0 - Hg ) + denG * Hg;
       return ret;
    }
 
