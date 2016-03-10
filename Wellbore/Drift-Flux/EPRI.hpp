@@ -72,7 +72,11 @@ struct EPRI
 
    ADs C10_1( const ADs& ReL, const ADs& gamma, double Dh );
 
-   ADs C10_2( const ADs& ReL, const ADs& Jfrx, double Dh )
+   ADs C10_2( const ADs& ReL, const ADs& Jfrx, double Dh );
+
+   ADs C10_3( const ADs& ReL, const ADs& Jfrx, double Dh );
+
+   ADs C10( const ADs& C10_1, const ADs& C10_2, const ADs& C10_3 );
 };
 
 
@@ -188,7 +192,7 @@ ADs EPRI::C0_CD( const ADs& L,   const ADs& K0, const ADs& r,   const ADs& Hg,
    ADs tmp1( 0.0 );
    tmp1 = C0_CU( L, K0, r, Hg );
 
-   AD tmp2( 0.0 );
+   ADs tmp2( 0.0 );
    tmp2 = Vgj/C1 * pow( 1.0-Hg, 0.2 ) / ( fabs(VsG) + fabs(VsL) );
 
    if( tmp1.value() >= tmp2.value() )
@@ -239,7 +243,7 @@ ADs EPRI::C2( const ADs& denG, const ADs& denL, const ADs& C5 )
    double ratio = denL.value() / denG.value();
    if( ratio <= 18.0 )
    {
-      ADs ratio_ads( 0.0 );
+      ADs ratio_ADs( 0.0 );
       ratio_ADs = denL/denG;
       tmp = 0.4757 * pow( log(ratio_ADs), 0.7 );
    }
@@ -367,7 +371,7 @@ ADs EPRI::C10_3( const ADs& ReL, const ADs& Jfrx, double Dh )
    double c = std::pow( 0.0381/Dh, 0.1 );
 
    ADs ret( 0.0 );
-   ret = ( 0.26*Jfrx + 0.85*(1.0-jfrx) ) * c * pow( fabs(ReL), 0.001 );
+   ret = ( 0.26*Jfrx + 0.85*(1.0-Jfrx) ) * c * pow( fabs(ReL), 0.001 );
    return ret;
 }
 

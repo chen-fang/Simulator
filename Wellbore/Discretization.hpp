@@ -5,6 +5,63 @@ typedef std::vector<double> VEC;
 
 class Discretization
 {
+private:
+   int PHASE_NUM;
+   int TOTAL_CELL_NUM;
+   int TOTAL_FACE_NUM;
+
+   typedef struct
+   {
+      ADs HG;
+      ADs P;
+   }                                         CellStateElement;
+   typedef std::vector< CellStateElement >   CellStateVector;
+
+   typedef struct
+   {
+      ADs VL;
+      ADs VG;
+   }                                         FaceStateElement;
+   typedef std::vector< FaceStateElement >   FaceStateVector;
+
+   typedef struct
+   {
+      CellStateVector                        C;
+      FaceStateVector                        F;
+   }                                         StateVector
+   
+   // < staggerd grid > variables defined in CV center
+   typedef struct
+   {
+      ADs Den[2]; // CellProp_PropCal
+      ADs DenM;   // CellProp_PropCal
+      ADs VelM;   // CellProp_Upwind
+   }                                         CellProps;
+   typedef std::vector< CellProps >          CellVector;
+
+   // < staggerd grid > variables defined in CV face
+   typedef struct
+   {
+      ADs H_Den_[2]; // FaceProp_Upwind
+      ADs DenM_;     // FaceProp_Upwind
+      ADs VelM_;     // FaceProp_Upwind
+   }                                        FaceProps;
+   typedef std::vector< FaceProps >         FaceVector;
+
+//private:
+public:
+   // Data from previous time step
+   //
+   // MeshType mesh;
+   // PropertyCalculator PropCalc;
+   
+   ADv mass_accum;
+   Vec mass_accum_old; 
+   ADv momt_accum;
+   Vec momt_accum_old;
+   ADV residual;
+
+
 public:
    Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM );
 
@@ -34,43 +91,22 @@ public:
    int Get_VL_Index_in_VAR( int left_cell_index,  int right_cell_index );
    int Get_VG_Index_in_VAR( int left_cell_index,  int right_cell_index );
 
-   void Evaluate_Variables( const ADv& VAR );
+   void Compute_CellProp_PropCacl( const StateVector& VAR );
+   void Compute_FaceProp_Upwind(   const StateVector& VAR );
+   void Compute_CellProp_UpWind(   const StateVector& VAR );
+   void Compute_Prop( const StateVector& VAR ); // summary
 
+   void Compute_Mass_Accum();
+   void Compute_Mass_Trans();
    ADs Mass_GL( double dX, double dT, const ADv& VAR, ADv& OUTPUT_Residual );
 
+   void Compute_Momt_Accum();
+   void Compute_Momt_Trans();
+   void Compute_Momt_Frict();
+   void Compute_Momt_Press();
+   void Compute_Momt_Gravt();
    ADs Momentum_GL( double dX, double dT, const ADv& VAR, ADv& OUTPUT_Residual );
 
-private:
-   int PHASE_NUM;
-   int TOTAL_CELL_NUM;
-   int TOTAL_FACE_NUM;
-
-   // Central variables in staggerd grid scheme
-   ADv DenL;
-   ADv DenG;
-   ADv DenM;
-   ADv VL;
-   ADv VG;
-   ADv VelM2; // VelM^2
-
-   // Facial variables in staggerd grid scheme
-
-   // Central variables needed at boundary surface
-   ADv DenL_;
-   ADv DenG_;
-   ADv DenM_;
-   ADv HL_;
-   ADv HG_;
-   ADv VelM_;
-
-   // Data from previous time step
-   // mass
-   Vec Hg_Old;
-   Vec DenL_Old;
-   Vec DenG_Old;
-   // momentum
-   Vec DenM_Old_;
-   Vec VelM_Old_;
 };
 
 Discretization::Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM )
@@ -125,125 +161,103 @@ Get_VG_Index( int left_cell_index, int right_cell_index, int CELL_VAR_SIZE )
 // ------------- Staggered grid scheme -----------------
 // -----------------------------------------------------
 void Discretization::
-Evaluate_Variables( const ADv& VAR )
+Compute_CellProp_PropCacl( const StateVector& state )
 {
-   //
-   // Central variables: DenL, DenG, DenM
-   //
-   for( int i = 0; i < TOTAL_CELL_NUM; ++i )
+   // DenL, DenG, DenM
+   for( int c = 0; c < TOTAL_CELL_NUM; ++c )
    {
-      // naturally (staggered grid)
-      int P_idx = Get_P_Index_in_VAR( i );
-      int Hg_idx = Get_Hg_Index_in_VAR( i );
-
-      DenL[i] = FluidProperty::Density_Wat( VAR[P_idx] );
-      DenG[i] = FluidProperty::Density_Air( VAR[P_idx] );
-      DenM[i] = FluidProperty::Density_Mix( DenL[i], DenG[i], VAR[Hg_idx] );
+      Cprop[c].Den[PhaseID::L] = FluidProperty::Density_Wat( state.C[c].P );
+      Cprop[c].Den[PhaseID::G] = FluidProperty::Density_Air( state.C[c].P );
+      Cprop[c].DenM = FluidProperty::Density_Mix( Cprop[c].Den[PhaseID::L],
+						  Cprop[c].Den[PhaseID::G],
+						  state.C[c].Hg );
    }
+}
 
-   //
-   // Face variables: DenL_, DenG_, DenM_, HL_, HG_, VelM_
-   //
-   for( int i = 0; i < TOTAL_FACE_NUM; ++i )
+void Discretization::
+Compute_FaceProp_Upwind( const StateVector& state )
+{
+   // H_Den_, DenM_, VelM_
+   ADscalar HL( 0.0 );
+
+   for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
-      int LC = Get_LC_Index( i );
-      int RC = Get_RC_Index( i );
+      int LC = Get_LC_Index( f );
+      int RC = Get_RC_Index( f );
 
-      int HG_idx_LC = Get_HG_Index_in_VAR( LC );
-      int HG_idx_RC = Get_HG_Index_in_VAR( RC );
-
-      int VL_idx = Get_VL_Index_in_VAR( LC, RC );
-      int VG_idx = Get_VG_Index_in_VAR( LC, RC );
-
-      // upstream
-      // liquid: DenL_, HL_
-      if( VAR[ VL_idx ].value() >= 0.0 )
+      if( state.F[f].VL.value() >= 0.0 )
       {
-	 DenL_[i] = DenL[ LC ];
-	 HL_[i] = 1.0 - VAR[ HG_idx_LC ];
+	 HL = 1.0 - state.C[LC].HG;
+	 Fprop[f].H_Den_[PhaseID::L] = HL * Cprop[LC].Den[PhaseID::L];
       }
       else
       {
-	 DenL_[i] = DenL[ RC ];
-	 HL_[i] = 1.0 - VAR[ HG_idx_RC ];
+	 HL = 1.0 - state.C[RC].HG;
+	 Fprop[f].H_Den_[PhaseID::L] = HL * Cprop[RC].Den[PhaseID::L];
       }
-      // gas: DenG_, Hg_
-      if( VAR[ VG_idx ].value() >= 0.0 )
+      // gas
+      if( state.F[f].VG.value() >= 0.0 )
       {
-	 DenG_[i] = DenG[ LC ];
-	 HG_[i] = VAR[ HG_idx_LC ];
+	 Fprop[f].H_Den_[PhaseID::G] = state.C[LC].HG * Cprop[LC].Den[PhaseID::G];
       }
       else
       {
-	 DenG_[i] = DenG[ RC ];
-	 HG_[i] = VAR[ HG_idx_RC ];
+	 Fprop[f].H_Den_[PhaseID::G] = state.C[RC].HG * Cporp[RC].Den[PhaseID::G];
       }
+
       // mixture: DenM_, VelM_
-      DenM_[i] = DenL_[i] * HL_[i] + DenG_[i] * HG_[i];
-      VelM_[i] = ( DenL_[i] * HL_[i] * VAR[VL_idx] + DenG_[i] * HG_[i] * VAR[VG_idx] ) / DenM_[i];
+      Fprop[f].DenM_ = Fprop[f].H_Den_[PhaseID::L] + Fprop[f].H_Den_[PhaseID::G];
+
+      Fprop[f].VelM_[i] = ( Fprop[f].H_Den_[PhaseID::L] * state.C[f].VL +
+			    Fprop[f].H_Den_[PhaseID::G] * state.C[f].VG ) / Fprop[f].DenM_;
    }
+}
 
-   // Central (dependent on above variables): VL, VG, VelM2
-   for( int i = 0; i < TOTAL_CELL_NUM; ++i )
+void Discretization::
+Compute_CellProp_Upwind( const StateVector& state )
+{
+   // VelM
+   for( int c = 0; c < TOTAL_CELL_NUM; ++c )
    {
-      // VL & VG: leftmost
-      if( i == 0 )
+      // 1st cell
+      if( c == 0 )
       {
-	 int VL_idx_RF = Get_VL_Index_in_VAR( i, i+1 );
-	 int VG_idx_RF = Get_VG_Index_in_VAR( i, i+1 );
-
-	 VL[i] = VAR[VL_idx_RF] / 2.0;
-	 VG[i] = VAR[VG_idx_RF] / 2.0;
+	 int RF = Get_RF_Index(c);
+	 state.C[c].VelM = state.F[RF].VelM_ / 2.0;
       }
-      // VL & VG: rightmost
-      if( i == TOTAL_CELL_NUM -1 )
+      // last cell
+      else if( c == TOTAL_CELL_NUM -1 )
       {
-	 int VL_idx_LF = Get_VL_Index_in_VAR( i-1, i );
-	 int VG_idx_LF = Get_VG_Index_in_VAR( i-1, i );
-
-	 VL[i] = VAR[VL_idx_LF] / 2.0;
-	 VG[i] = VAR[VG_idx_LF] / 2.0;
+	 int LF = Get_LF_Index(c);
+	 state.C[c].VelM = state.F[LF].VelM_ / 2.0;
       }
-      // VL & VG: other
-      if( i != 0 && i != TOTAL_CELL_NUM -1 )
+      // other cells
+      else
       {
-	 int VL_idx_LF = Get_VL_Index_in_VAR( i-1, i );
-	 int VG_idx_LF = Get_VG_Index_in_VAR( i-1, i );
-
-	 int VL_idx_RF = Get_VL_Index_in_VAR( i, i+1 );
-	 int VG_idx_RF = Get_VG_Index_in_VAR( i, i+1 );
+	 int LF = Get_LF_Index(c);
+	 int RF = Get_RF_Index(c);
 
 	 // liquid
-	 if( VAR[VL_idx_LF].value() > 0.0 && VAR[VL_idx_RF].value() > 0.0 )
+	 // < cocurrent right >
+	 if( state.F[LF].VelM_.value() > 0.0 && state.F[RF].VelM_.value() > 0.0 )
 	 {
-	    VL[i] = VAR[VL_idx_LF];
+	    state.C[c].VelM = state.F[LF].VelM_;
 	 }
-	 else if( VAR[VL_idx_LF].value() < 0.0 && VAR[VL_idx_RF].value() < 0.0 )
+	 // < cocurrent left >
+	 else if( state.F[LF].VelM_.value() > 0.0 && state.F[RF].VelM_.value() > 0.0 )
 	 {
-	    VL[i] = VAR[VL_idx_RF];
+	    state.C[c].VelM = state.F[RF].VelM_;
 	 }
+	 // < counter-current >
 	 else
 	 {
-	    VL[i] = (VAR[VL_idx_LF] + VAR[VL_idx_RF]) / 2.0;
-	 }
-	 // gas
-	 if( VAR[VG_idx_LF].value() > 0.0 && VAR[VG_idx_RF].value() > 0.0 )
-	 {
-	    VG[i] = VAR[VG_idx_LF];
-	 }
-	 else if( VAR[VG_idx_LF].value() < 0.0 && VAR[VG_idx_RF].value() < 0.0 )
-	 {
-	    VG[i] = VAR[VG_idx_RF];
-	 }
-	 else
-	 {
-	    VG[i] = (VAR[VG_idx_LF] + VAR[VG_idx_RF]) / 2.0;
+	    state.C[c].VelM = (state.F[LF].VelM_ + state.F[RF].VelM_) / 2.0;
 	 }
       }
    }
 
    // VelM2
-   VelM2[i] = (DenL[i] * HL[i] * VL[i]*VL[i] + DenG[i] * HG[i] * VG[i]*VG[i]) / DenM[i];
+   CpV[c].VelM = ( CpV[c].DenL[c] * CpV[c].HL[c] * VL[c]*VL[c] + DenG[c] * HG[c] * VG[c]*VG[c]) / DenM[c];
 }
 
 
@@ -319,13 +333,13 @@ Momentum_GL( double dX, double dT, const ADv& VAR, ADv& OUTPUT_Residual )
 {
    for( int i = 0; i < TOTAL_FACE_NUM; ++i )
    {
-      ADs R1( 0.0 );
-      R1 = (DenM_[i] * VelM_[i] - DenM_Old_[i] * VelM_[i]) / dT;
+      ADs R1_A( 0.0 );
+      R1 = (DenM_[i] * VelM_[i] - DenM_Old_[i] * VelM_Old_[i]) / dT;
 
       int LC = Get_LC_Index( i );
       int RC = Get_RC_Index( i );
 
-      ADs R2( 0.0 );
+      ADs R2_T( 0.0 );
       R2 = (DenM[RC] * VelM2[RC] - DenM[LC] * VelM2[LC]) / dX;
 
       ADs R3_P( 0.0 );
@@ -335,17 +349,13 @@ Momentum_GL( double dX, double dT, const ADv& VAR, ADv& OUTPUT_Residual )
 
       R3_P = (VAR[P_idx_RC] - VAR[P_idx_LC]) / dX;
 
-
-
-      ADs R4_friction( 0.0 );
-      //
-      //
-      //
+      ADs R4_F( 0.0 );
+      R4_F = f_M_ * DenM_[i] * VelM_[i] * abs(VelM_[i]) / (2.0 * d);
 
       ADs R5_G( 0.0 );
       R5_G[i] = DenM_[i] * g * Cos(theta);
 
       int index_for_Momentum_Mix = Get_VL_Index_in_VAR( LC, RC );
-      OUTPUT_Residual[index_for_Momentum_Mix] = R1 + R2 + R3_P + R4_friction - R5_G;
+      OUTPUT_Residual[index_for_Momentum_Mix] = R1_A + R2_T + R3_P + R4_F - R5_G;
    }
 }
