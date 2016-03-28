@@ -10,34 +10,61 @@ typedef adetl::ADvector   ADv;
 
 using std::vector;
 
+// Note:
+// Without special notice (i.e. XXX_FD), the standard unit (SI) is applied to variables.
+
+// Density
+// SI Unit: [ Kg/m3 ]
+// FD Unit: [ Lbm/ft3 ]
+
+// Pressure
+// SI Unit: [ Pa ]
+// FD Unit: [ psi ]
+
+
 struct FluidProperty
 {
-   /** reference pressure **///------------------------------------------------------------
-   const ADs Pb = 14.7; // psi
+private:
+   /** reference pressure [ Pa ] **///--------------------------------------------------
+   const double Pb = 1.01325E+05;
 
-   /** compressibility **///---------------------------------------------------------------
-   const ADs Co = 1.0E-05;
-   const ADs Cw = 3.0E-06;
+   /** compressibility factor [ 1/Pa ] **///--------------------------------------------
+   const double Cw = 4.35E-08;
 
-   /** viscosoty **///---------------------------------------------------------------------
-   const ADs VisO = 1.1;
-   const ADs VisW = 0.8;
+   /** SC density [ Kg/m3 ] **///------------------------------------------------------
+   // Standard condition: 15['C] + atmosphere pressure
+   const double DenA_SC = 1.225;
+   const double DenW_SC = 999.1026;
 
-   /** volume factor **///-----------------------------------------------------------------
-   const ADs Bob = 1.0;
-   const ADs Bwb = 1.0;
+   /** viscosoty [ Pa.s ] at [ 50C ] **///--------------------------------------------------
+   //const ADs VisO = 1.1; // cp
+   const double VisW = 0.547E-03;
+   const double VisA = 1.962E-05; 
 
-   /** density **///----------------------------------------------------------------------
-   ADs DensOil_sc = 53;  // [ lbm/ft3 ]
-   ADs DensWat_sc = 65;  // [ lbm/ft3 ]
+   /** reference formation volume factor **///--------------------------------------------
+   const double Bwb = 1.0;
 
+   /** specific gas constant **///--------------------------------------------------------
+   const double Rsp_FD = 53.35;      // [ ft.Lbf/(Lbm.R) ]
+   const double Rsp = 287.058; // [ J/(Kg.K) ]
 
-   static ADs Bo( const ADs& Po )
-   {
-      ADs ret( 0.0 );
-      ret = Bob * ( 1.0 - Co * ( Po - Pb ) );
-      return ret;
-   }
+   /** standard gravititional accecleration [ m/s2 ] **///--------------------------------
+   const double g = 9.80665;
+
+   double Temperature_C_to_K( double Tc )    { return Tc + 274.15; }
+   // double Temperature_F_to_R( double Tf )    { return Tf + 459.67; }
+
+   // double Density_SI_to_FD( double Den_SI )  { return Den_SI * 0.062428; }
+   // double Density_FD_to_SI( double Den_FD )  { return Den_FD / 0.062428; }
+
+   // double Viscosity_cp_to_SI( double vis )   { return vis * 0.001; }
+
+   // static ADs Bo( const ADs& Po )
+   // {
+   //    ADs ret( 0.0 );
+   //    ret = Bob * ( 1.0 - Co * ( Po - Pb ) );
+   //    return ret;
+   // }
 
    static ADs Bw( const ADs& Pw )
    {
@@ -46,51 +73,139 @@ struct FluidProperty
       return ret;
    }
 
-   static ADs Density_Oil( const ADs& Po )
+   /** viscosity **///----------------------------------------------------------------------
+   static double Viscosity_Wat()   { return VisW; }
+   static double Viscosity_Air()   { return VisA; }
+
+   static double Viscosity_Mix( const ADs& HL_visL, const ADs& HG_visG )
    {
-      ADs Bo( 0.0 );
-      Bo = Bo( Po );
       ADs ret( 0.0 );
-      ret = DensOil_sc / Bo;
+      ret = HL_visL + HG_visG;
       return ret;
    }
 
-   static ADs Density_Oil( const ADs& Bo )
+   /** density **///----------------------------------------------------------------------
+   // static ADs Density_Oil( const ADs& Po )
+   // {
+   //    ADs Bo( 0.0 );
+   //    Bo = Bo( Po );
+   //    ADs ret( 0.0 );
+   //    ret = DensOil_sc / Bo;
+   //    return ret;
+   // }
+   // static ADs Density_Oil( const ADs& Bo )
+   // {
+   //    ADs ret( 0.0 );
+   //    ret = DensOil_sc / Bo;
+   //    return ret;
+   // }
+
+   static ADs Density_Wat( const ADs& Pw )
    {
       ADs ret( 0.0 );
-      ret = DensOil_sc / Bo;
+      ret = DenW_SC / Bw(Pw);
+      return ret;
+   }
+   static ADs Density_Wat( const ADs& Bw )
+   {
+      ADs ret( 0.0 );
+      ret = DenW_SC / Bw;
       return ret;
    }
 
-   static ADs Density_Wat ( const ADs& Pw )
+   static ADs Density_Air( const ADs& P, double Tc )
    {
-      ADs Bw( 0.0 );
-      Bw = Bw( Pw );
+      // SI Unit
+      // pressure:              [ Pa ]
+      // specific gas constant: [ J/(Kg.K) ]
+      // temperature:           [ C ]
+      // density:               [ Kg/m3 ]
       ADs ret( 0.0 );
-      ret = DensWat_sc / Bw;
+      ret = P / ( Rsp_SI * Temperature_C_to_K(Tc) );
       return ret;
    }
-
-   static ADs Density_Wat ( const ADs& Bw )
+   static ADs Density_Air_FD( const ADs& P, double Tf )
    {
+      // Field Unit
+      // pressure:              [ psi ]
+      // specific gas constant: [ ft.Lbf/(Lbm.R) ]
+      // temperature:           [ F ]
+      // density:               [ Lbm/ft3 ]
       ADs ret( 0.0 );
-      ret = DensWat_sc / Bw;
+      ret = 144.0 * P / ( Rsp_FD & Temperature_F_to_R(Tf) );
       return ret;
    }
 
    /** Two-Phase Mixture Density **///-------------------------------------------------------
-   static ADs Density_Mix( const ADs& denL, const ADs& denG, const ADs& Hg )
+   static ADs Density_Mix( const ADs& HL_denL, const ADs& HG_denG )
    {
       ADs ret( 0.0 );
-      ret = denL * ( 1.0 - Hg ) + denG * Hg;
+      ret = HL_denL + HG_denG;
       return ret;
    }
 
    /** Specific Weight **///-----------------------------------------------------------------
    static ADs SpecificWeight( const ADs& density )
    {
+      // density:  [ Kg/m3 ]
+      // SpWeight: [ N/m3 ] or [ Kg/(m2.s2) ]
       ADs ret( 0.0 );
-      ret = density / 144.0;
+      ret = density * g;
+      return ret;
+   }
+   static ADs SpecificWeight_FD( const ADs& density )
+   {
+      // density:  [ Lbm/ft3 ]
+      // SpWeight: [ Lbf/ft3 ]
+      ADs ret( 0.0 );
+      ret = density;
+      return ret;
+   }
+
+   /** Reynolds Number **///-----------------------------------------------------------------
+   static ADs ReynoldsNumber( const ADs& den, const ADs& vel, double vis, double D )
+   {
+      // SI Unit
+      // density:   [ Kg/m3 ]
+      // velocity:  [ m/s ]
+      // diameter:  [ m ]
+      // viscosity: [ Kg/(m.s) ]
+      ADs ret( 0.0 );
+      ret = den * vel * D / vis;
+      return ret;
+   }
+   static ADs ReynoldsNumber_FD( const ADs& den, const ADs& vel, ADs vis, double D )
+   {
+      // Field Unit
+      // density:   [ Lbm/ft3 ]
+      // velocity:  [ ft/s ]
+      // diameter:  [ ft ]
+      // viscosity: [ cp ]
+      ADs ret( 0.0 );
+      ret = 1489.344 * den * vel * D / vis;
+      return ret;
+   }
+
+   /** Frictional Factor **///--------------------------------------------------------
+   static ADs Fanning_Friction_Factor( const ADs& Re )
+   {
+      // Use together with SI units
+      ADs ret( 0.0 );
+      if( Re.value() <= 2100.0 )
+      {
+	 ret = 16.0 / Re;
+      }
+      else
+      {
+	 ret = 0.046 / pow( Re, 0.2 );
+      }
+      return ret;
+   }
+   static ADs Moody_Friction_Factor( const ADs& Re )
+   {
+      // Use together with Field units
+      ADs ret( 0.0 );
+      ret = 4.0 * Fanning_Friction_Factor( Re );
       return ret;
    }
 
