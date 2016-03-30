@@ -33,6 +33,8 @@ struct EPRI
    ADs R(  const ADs& denG, const ADs& denL, const ADs& B1 );
 
    ADs C0_CU( const ADs& L, const ADs& K0, const ADs& r, const ADs& Hg );
+   ADs C0_CU( const ADs& HG, const ADs& denL, const ADs& denG, const ADs& VL, const ADs& VG,
+	      const ADs& visL, const ADs visG , double diameter);
 
    ADs C0_CD( const ADs& L,   const ADs& K0, const ADs& r,   const ADs& Hg,
 	      const ADs& Vgj, const ADs& C1, const ADs& VsG, const ADs& VsL );
@@ -184,6 +186,35 @@ ADs EPRI::C0_CU( const ADs& L, const ADs& K0, const ADs& r, const ADs& Hg )
    ret = L / ( K0 + (1.0-K0) * pow( Hg, r ) );
    return ret;
 }
+ADs EPRI::
+C0_CU( const ADs& HG, const ADs& denL, const ADs& denG, const ADs& VL, const ADs& VG,
+       const ADs& visL, const ADs visG , double diameter)
+{
+   ADs L( 0.0 );
+   L = L_CU( HG );
+
+   ADs reG( 0.0 ), reL( 0.0 );
+   reG = ReyNum( denG, VG, visG, diameter );
+   reL = ReyNum( denL, VL, visL, diameter );
+
+   ADs re( 0.0 );
+   re = Re_CU( reG, reL );
+
+   ADs a1( 0.0 );
+   a1 = A1( re );
+
+   ADs b1( 0.0 );
+   b1 = B1( a1 );
+
+   ADs k0( 0.0 );
+   k0 = K0( denG, denL, b1 );
+
+   ADs r( 0.0 );
+   r = R( denG, denL, b1 );
+
+   return C0_CU( L, k0, r, HG );
+}
+
 
 
 ADs EPRI::C0_CD( const ADs& L,   const ADs& K0, const ADs& r,   const ADs& Hg,

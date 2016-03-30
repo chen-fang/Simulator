@@ -1,14 +1,13 @@
 #pragma once
 #include <vector>
+#include "Drift-Flux/EPRI.hpp"
 
-typedef std::vector<double> VEC;
+typedef std::vector<double> Vec;
 
 class Discretization
 {
 private:
-   int PHASE_NUM;
-   int TOTAL_CELL_NUM;
-   int TOTAL_FACE_NUM;
+   enum PhaseID { L=0, G=1 };
 
    typedef struct
    {
@@ -26,9 +25,12 @@ private:
 
    typedef struct
    {
-      CellStateVector                        C;
-      FaceStateVector                        F;
-   }                                         State;
+      ADs HG;
+      ADs P;
+      ADs VL;
+      ADs VG;
+   }                                         StateElement;
+   typedef std::vector< StateElement >       StateVector;
    
    // < staggerd grid > variables defined in CV center
    typedef struct
@@ -42,13 +44,21 @@ private:
    // < staggerd grid > variables defined in CV face
    typedef struct
    {
+      ADs H_[2];
+      ADs Den_[2];
       ADs H_Den_[2]; // FaceProp_Upwind
       ADs H_Vis_[2]; // FaceProp_Upwind
       ADs DenM_;     // FaceProp_Upwind
+      ADs VisM_;
       ADs VelM_;     // FaceProp_Upwind
    }                                        FaceProps;
    typedef std::vector< FaceProps >         FaceVector;
 
+   typedef struct
+   {
+      double MatBal[2];
+      double NormSat[2];
+   }                                        ConvergenceInfo;
 
 //private:
 public:
@@ -56,9 +66,18 @@ public:
    //
    // MeshType mesh;
    // PropertyCalculator PropCalc;
+
+   const int PHASE_NUM;
+   const int TOTAL_CELL_NUM;
+   const int TOTAL_FACE_NUM;
+   const int dX;
+   const int D;
    
    CellVector Cprop;
    FaceVector Fprop;
+
+   CellStateVector Cstate;
+   FaceStateVector Fstate;
 
    // for mass
    ADv mass_accumL;
@@ -77,10 +96,10 @@ public:
    
    ADv residual;
 
-
+   FluidProperty PropCalc;
 
 public:
-   Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM );
+   Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _dX, int _D );
 
    // Node and face indices
    // '|' indicates CV face
@@ -91,54 +110,190 @@ public:
    // Face Index: X . 0 . 1 . 2 ... N-2 . X   --- --- Total: N-1
    //
    // Left and Right Cell Index
-   int Get_LC_Index( int face_index )    { return face_index; }
-   int Get_RC_Index( int face_index )    { return face_index + 1; }
+   int Get_LC_Index( int face_index )   { return face_index; }
+   int Get_RC_Index( int face_index )   { return face_index + 1; }
    // Left and Right Face Index
-   int Get_LF_Index( int cell_index )    { return cell_index - 1; }
-   int Get_RF_Index( int cell_index )    { return cell_index;   }
+   int Get_LF_Index( int cell_index )   { return cell_index - 1; }
+   int Get_RF_Index( int cell_index )   { return cell_index;   }
 
-   int MassEqnID( int c, int phaseID )   { return 4 * c + phaseID; }
-   int MomtEqnID( int f )                { return 4 * f + 2; }
-   int DFlxEqnID( int f )                { return 4 * f + 3; }
+   std::size_t max_num_eqns() const     { return PHASE_NUM * ( TOTAL_CELL_NUM + TOTAL_CELL_NUM ); }
+   std::size_t max_num_nnz()  const     { return 44 * max_num_eqns() - 28; }
+
+   int MassEqnID( int c, int phaseID )  { return 4 * c + phaseID; }
+   int MomtEqnID( int f )               { return 4 * f + 2; }
+   int DflxEqnID( int f )               { return 4 * f + 3; }
+
+   void Transfer_StateVector( const StateVector& state );
+   void Initiate_State( StateVector& state );
+   void bind_to_old_state( const StateVector& old_state );
+   bool discretize( const StateVector& state, double dT );
+
+   template< typename R >
+   void update_state( StateVector& state, const R& update, bool do_safeguard );
+   
+   template< typename V, typename M >
+   void extract_R_J( V&r, M& m, std::size_t offset );
+
 
    // Section: Property
-   void Compute_CellProp_PropCacl( const StateVector& state );
-   void Compute_FaceProp_Upwind( const StateVector& state );
-   void Compute_CellProp_UpWind()
-   void Compute_Properties( const StateVector& state ); // summary
+   void Compute_CellProp_PropCacl();
+   void Compute_FaceProp_Upwind();
+   void Compute_CellProp_Upwind();
+   void Compute_Properties(); // summary
 
    // Section: Mass
-   void Compute_Mass_Accum( const State& state );
-   void Compute_Mass_Trans( const State& state );
-   void Compute_Mass_Resid( const State& state );
+   void Compute_Mass_Accum();
+   void Compute_Mass_Trans();
+   void Compute_Mass_Resid( double dT );
 
    // Section: Momentum
    void Compute_Momt_Accum();
    void Compute_Momt_Trans();
    void Compute_Momt_Frict();
-   void Compute_Momt_Press( const State& state );
+   void Compute_Momt_Press();
    void Compute_Momt_Gravt();
-   void Compute_Momt_Resid( const State& state );
+   void Compute_Momt_Resid( double dT );
 
-
+   // Section: Drift-Flux
+   void Compute_Dflx_Resid();
 };
 
-Discretization::Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM )
+Discretization::Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _DX, int _D ) :
+   PHASE_NUM( _PHASE_NUM ),
+   TOTAL_CELL_NUM( _TOTAL_CELL_NUM ),
+   TOTAL_FACE_NUM( _TOTAL_CELL_NUM - 1 ),
+   dX( _DX ),
+   D( _D ),
+   Cprop(  TOTAL_CELL_NUM ),
+   Fprop(  TOTAL_FACE_NUM ),
+   Cstate( TOTAL_CELL_NUM ),
+   Fstate( TOTAL_FACE_NUM )
 {
-   PHASE_NUM = _PHASE_NUM;
-   TOTAL_CELL_NUM = _TOTAL_CELL_NUM;
-   TOTAL_FACE_NUM = _TOTAL_CELL_NUM - 1;
-   //
-   DenL.resize( TOTAL_CELL_NUM, 0.0 );
-   DenG.resize( TOTAL_CELL_NUM, 0.0 );
-   DenM.resize( TOTAL_CELL_NUM, 0.0 );
-   //
-   DenL_.resize( TOTAL_FACE_NUM, 0.0 );
-   DenG_.resize( TOTAL_FACE_NUM, 0.0 );
-   DenM_.resize( TOTAL_FACE_NUM, 0.0 );
-   HL_.resize(   TOTAL_FACE_NUM, 0.0 );
-   HG_.resize(   TOTAL_FACE_NUM, 0.0 );
-   VelM_.resize( TOTAL_FACE_NUM, 0.0 );
+
+}
+
+void Discretization::
+Transfer_StateVector( const StateVector& state )
+{
+   for( int c = 0; c < TOTAL_CELL_NUM; ++c )
+   {
+      Cstate[c].HG = state[c].HG;
+      Cstate[c].P  = state[c].P;
+   }
+   for( int f = 0; f < TOTAL_FACE_NUM; ++f )
+   {
+      Fstate[f].VL = state[f].VL;
+      Fstate[f].VG = state[f].VG;
+   }
+}
+
+void Discretization::
+Initiate_State( StateVector& state )
+{
+   for( int c = 0; c < TOTAL_CELL_NUM; ++c )
+   {
+      state[c].HG = 0.6;
+      state[c].P  = 2.0E+07; // Pa
+      //
+      state[c].HG.make_independent( MassEqnID(c,PhaseID::L) );
+      state[c].P.make_independent(  MassEqnID(c,PhaseID::G) );
+   }
+   for( int f = 0; f < TOTAL_FACE_NUM; ++f )
+   {
+      state[f].VL = 0.0;
+      state[f].VG = 0.0;
+      //
+      state[f].VL.make_independent( MomtEqnID(f) );
+      state[f].VG.make_independent( DflxEqnID(f) );
+   }
+}
+
+void Discretization::
+bind_to_old_state( const StateVector& old_state )
+{
+   Transfer_StateVector( old_state );
+   Compute_Properties();
+   Compute_Mass_Accum();
+   Compute_Momt_Accum();
+   for( int c = 0; c < TOTAL_CELL_NUM; ++c )
+   {
+      mass_accumL_old[c] = mass_accumL[c].value();
+      mass_accumG_old[c] = mass_accumG[c].value();
+   }
+   for( int f = 0; f < TOTAL_FACE_NUM; ++f )
+   {
+      momt_accum_old[f] = momt_accum[f].value();
+   }
+}
+
+bool Discretization::
+discretize( const StateVector& state, double dT )
+{
+   bool is_badvalue = false;
+   Transfer_StateVector( state );
+   Compute_Properties();
+   Compute_Mass_Resid( dT );
+   Compute_Momt_Resid( dT );
+   Compute_Dflx_Resid();
+
+   std::size_t eqn_massL, eqn_massG;
+   for( int c = 0; c < TOTAL_CELL_NUM; ++c )
+   {
+      eqn_massL = MassEqnID( c, PhaseID::L );
+      eqn_massG = MassEqnID( c, PhaseID::G );
+      if( !std::isfinite( residual[ eqn_massL ].value() ) ) is_badvalue = true;
+      if( !std::isfinite( residual[ eqn_massG ].value() ) ) is_badvalue = true;
+   }
+   std::size_t eqn_momt, eqn_dflx;
+   for( int f = 0; f < TOTAL_FACE_NUM; ++f )
+   {
+      eqn_momt = MomtEqnID( f );
+      eqn_dflx = DflxEqnID( f );
+      if( !std::isfinite( residual[ eqn_momt ].value() ) ) is_badvalue = true;
+      if( !std::isfinite( residual[ eqn_dflx ].value() ) ) is_badvalue = true;
+   }
+   return is_badvalue;
+}
+
+template< typename R >
+void Discretization::
+update_state( StateVector& state, const R& update, bool do_safeguard )
+{
+   std::size_t eqn_massL, eqn_massG;
+   for( int c = 0; c < TOTAL_CELL_NUM; ++c )
+   {
+      eqn_massL = MassEqnID( c, PhaseID::L );
+      eqn_massG = MassEqnID( c, PhaseID::G );
+
+      state[c].HG += update[ eqn_massL ];
+      state[c].P  += update[ eqn_massG ];
+   }
+   std::size_t eqn_momt, eqn_dflx;
+   for( int f = 0; f < TOTAL_FACE_NUM; ++f )
+   {
+      eqn_momt = MomtEqnID( f );
+      eqn_dflx = DflxEqnID( f );
+
+      state[f].VL += update[ eqn_momt ];
+      state[f].VG += update[ eqn_dflx ];
+   }   
+}
+
+template< typename V, typename M >
+void Discretization::
+extract_R_J( V&r, M& m, std::size_t offset )
+{
+   residual.extract_CSR( r, m.rowptr(), m.colind(), m.value() );
+   for( std::size_t i = 0; i < m.rowptr().size(); ++i ) m.rowptr()[i] += offset;
+   for( std::size_t i = 0; i < m.colind().size(); ++i ) m.colind()[i] += offset;
+   m.check_size();
+   if( r.size() != residual.size() )
+      std::cout << "BUG IN JACOBIAN\t ZERO ROW FOUND" << r.size() <<"!="<< residual.size() << std::endl;
+   m.ainfo.elliptic_varr_id = 0;
+   m.ainfo.n_vars_per_block = 4;
+   m.ainfo.tile_offset      = 0;
+   m.ainfo.n_blocks         = TOTAL_CELL_NUM; // I doubt it
+   m.ainfo.n_unblocked_vars = 0;
 }
 
 
@@ -147,63 +302,57 @@ Discretization::Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM )
 // -----------------------------------------------------
 // Section: Property
 void Discretization::
-Compute_CellProp_PropCacl( const StateVector& state )
+Compute_CellProp_PropCacl()
 {
    // DenL, DenG, DenM
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
    {
-      Cprop[c].Den[PhaseID::L] = FluidProperty::Density_Wat( state.C[c].P );
-      Cprop[c].Den[PhaseID::G] = FluidProperty::Density_Air( state.C[c].P );
-      Cprop[c].DenM = FluidProperty::Density_Mix( Cprop[c].Den[PhaseID::L],
-						  Cprop[c].Den[PhaseID::G],
-						  state.C[c].Hg );
+      Cprop[c].Den[PhaseID::L] = PropCalc.Density_Wat( Cstate[c].P );
+      Cprop[c].Den[PhaseID::G] = PropCalc.Density_Air( Cstate[c].P, 50.0 );
+      Cprop[c].DenM = PropCalc.Density_Mix( Cstate[c].HG * Cprop[c].Den[PhaseID::L],
+					    Cstate[c].HG * Cprop[c].Den[PhaseID::G] );
    }
 }
 
 // Section: Property
 void Discretization::
-Compute_FaceProp_Upwind( const StateVector& state )
+Compute_FaceProp_Upwind()
 {
    // H_Den_, DenM_, VelM_
-   ADscalar HL( 0.0 );
+   ADs HL( 0.0 ), HG( 0.0 );
 
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
       int LC = Get_LC_Index( f );
       int RC = Get_RC_Index( f );
+      int C;
       // liquid
-      if( state.F[f].VL.value() >= 0.0 )
-      {
-	 HL = 1.0 - state.C[LC].HG;
-	 Fprop[f].H_Den_[PhaseID::L] = HL * Cprop[LC].Den[PhaseID::L];
-	 Fprop[f].H_Vis_[PhaseID::L] = HL * FluidProperty::Viscosity_Wat();
-      }
-      else
-      {
-	 HL = 1.0 - state.C[RC].HG;
-	 Fprop[f].H_Den_[PhaseID::L] = HL * Cprop[RC].Den[PhaseID::L];
-	 Fprop[f].H_Vis_[PhaseID::L] = HL * FluidProperty::Viscosity_Wat();
-      }
+      if( Fstate[f].VL.value() >= 0.0 )   C = LC;
+      else                                C = RC;
+
+      HL = 1.0 - Cstate[C].HG;
+      Fprop[f].H_[PhaseID::L]     = HL;
+      Fprop[f].Den_[PhaseID::L]   = Cprop[C].Den[PhaseID::L];
+      Fprop[f].H_Den_[PhaseID::L] = HL * Cprop[C].Den[PhaseID::L];
+      Fprop[f].H_Vis_[PhaseID::L] = HL * PropCalc.Viscosity_Wat();
+
       // gas
-      if( state.F[f].VG.value() >= 0.0 )
-      {
-	 Fprop[f].H_Den_[PhaseID::G] = state.C[LC].HG * Cprop[LC].Den[PhaseID::G];
-	 Fprop[f].H_Vis_[PhaseID::G] = state.C[LC].HG * FluidProperty::Viscosity_Air();
-      }
-      else
-      {
-	 Fprop[f].H_Den_[PhaseID::G] = state.C[RC].HG * Cprop[RC].Den[PhaseID::G];
-	 Fprop[f].H_Vis_[PhaseID::G] = state.C[RC].HG * FluidProperty::Viscosity_Air();
-      }
+      if( Fstate[f].VG.value() >= 0.0 )   C = LC;
+      else                                C = RC;
+      HG = Cstate[C].HG;
+      Fprop[f].H_[PhaseID::G]     = HG;
+      Fprop[f].Den_[PhaseID::G]   = Cprop[C].Den[PhaseID::G];
+      Fprop[f].H_Den_[PhaseID::G] = HG * Cprop[C].Den[PhaseID::G];
+      Fprop[f].H_Vis_[PhaseID::G] = HG * PropCalc.Viscosity_Air();
 
       // mixture: DenM_, VelM_
-      Fprop[f].DenM_ = FluidProperty::Density_Mix(   Fprop[f].H_Den_[PhaseID::L],
-						     Fprop[f].H_Den_[PhaseID::G] );
-      Fprop[f].VisM_ = FluidProperty::Viscosity_Mix( Fprop[f].H_Vis_[PhaseID::L],
-						     Fprop[f].H_Vis_[PhaseID::G] );
+      Fprop[f].DenM_ = PropCalc.Density_Mix(   Fprop[f].H_Den_[PhaseID::L],
+					       Fprop[f].H_Den_[PhaseID::G] );
+      Fprop[f].VisM_ = PropCalc.Viscosity_Mix( Fprop[f].H_Vis_[PhaseID::L],
+					       Fprop[f].H_Vis_[PhaseID::G] );
 
-      Fprop[f].VelM_[i] = ( Fprop[f].H_Den_[PhaseID::L] * state.F[f].VL +
-			    Fprop[f].H_Den_[PhaseID::G] * state.F[f].VG ) / Fprop[f].DenM_;
+      Fprop[f].VelM_ = ( Fprop[f].H_Den_[PhaseID::L] * Fstate[f].VL +
+			 Fprop[f].H_Den_[PhaseID::G] * Fstate[f].VG ) / Fprop[f].DenM_;
    }
 }
 
@@ -218,7 +367,7 @@ Compute_CellProp_Upwind()
       if( c == 0 )
       {
 	 int RF = Get_RF_Index(c);
-	 Cprop[c].VelM = Cprop[RF].VelM_; // / 2.0;
+	 Cprop[c].VelM = Fprop[RF].VelM_; // / 2.0;
       }
       // last cell
       else if( c == TOTAL_CELL_NUM -1 )
@@ -254,27 +403,27 @@ Compute_CellProp_Upwind()
 
 // Section: Property
 void Discretization::
-Compute_Properties( const StateVector& state )
+Compute_Properties()
 {
-   Compute_CellProp_PropCacl( state );
-   Compute_FaceProp_Upwind( state );
+   Compute_CellProp_PropCacl();
+   Compute_FaceProp_Upwind();
    Compute_CellProp_Upwind();
 }
 
 // Section: Mass
 void Discretization::
-void Compute_Mass_Accum( const State& state, double dT )
+Compute_Mass_Accum()
 {
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
    {
-      mass_accumL[c] = (1.0 - state.C[c].HG) * Cprop[c].Den[PhaseID::L] / dT;
-      mass_accumG[c] =        state.C[c].HG  * Cprop[c].Den[PhaseID::G] / dT;
+      mass_accumL[c] = (1.0 - Cstate[c].HG) * Cprop[c].Den[PhaseID::L];
+      mass_accumG[c] =        Cstate[c].HG  * Cprop[c].Den[PhaseID::G];
    }
 }
 
 // Section: Mass
 void Discretization::
-void Compute_Mass_Trans( const State& state, double dX )
+Compute_Mass_Trans()
 {
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
    {
@@ -288,8 +437,8 @@ void Compute_Mass_Trans( const State& state, double dX )
       int LC = Get_LC_Index(f);
       int RC = Get_RC_Index(f);
 
-      tmpL = Fprop[f].H_Den_[PhaseID::L] * state.F[f].VL / dX;
-      tmpG = Fprop[f].H_Den_[PhaseID::G] * state.F[f].VG / dX;
+      tmpL = Fprop[f].H_Den_[PhaseID::L] * Fstate[f].VL / dX;
+      tmpG = Fprop[f].H_Den_[PhaseID::G] * Fstate[f].VG / dX;
 
       mass_transL[LC] += tmpL;
       mass_transG[LC] += tmpG;
@@ -301,10 +450,10 @@ void Compute_Mass_Trans( const State& state, double dX )
 
 // Section: Mass
 void Discretization::
-void Compute_Mass_Resid( const State& state )
+Compute_Mass_Resid( double dT )
 {
-   Compute_Mass_Accum( state );
-   Compute_Mass_Trans( state );
+   Compute_Mass_Accum();
+   Compute_Mass_Trans();
 
    // !!!!!!!!!!!!!!!!!!!!!!!
    // add source term here...
@@ -315,8 +464,8 @@ void Compute_Mass_Resid( const State& state )
       MassL_ID = MassEqnID( c, PhaseID::L );
       MassG_ID = MassEqnID( c, PhaseID::G );
       
-      residual[ MassL_ID ] = mass_accumL[c] + mass_transL[c];
-      residual[ MassG_ID ] = mass_accumG[c] + mass_transG[c];
+      residual[ MassL_ID ] = ( mass_accumL[c] - mass_accumL_old[c] ) / dT + mass_transL[c];
+      residual[ MassG_ID ] = ( mass_accumL[c] - mass_accumG_old[c] ) / dT + mass_transG[c];
    }
 
    int Cell_ID;
@@ -340,17 +489,17 @@ void Compute_Mass_Resid( const State& state )
 
 // Section: Momentum
 void Discretization::
-Compute_Momt_Accum( double dT )
+Compute_Momt_Accum()
 {
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
-      momt_accum[f] = (Fprop[f].DenM_ * Fprop[f].VelM_) / dT;
+      momt_accum[f] = Fprop[f].DenM_ * Fprop[f].VelM_;
    }
 }
 
 // Section: Momentum
 void Discretization::
-Compute_Momt_Trans( double dX )
+Compute_Momt_Trans()
 {
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
@@ -363,13 +512,13 @@ Compute_Momt_Trans( double dX )
 
 // Section: Momentum
 void Discretization::
-Compute_Momt_Press( const State& state, double dX )
+Compute_Momt_Press()
 {
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
       int LC = Get_LC_Index( f );
       int RC = Get_RC_Index( f );
-      momt_press[f] = (state.C[RC].P - state.C[LC].P) / dX;
+      momt_press[f] = (Cstate[RC].P - Cstate[LC].P) / dX;
    }
 }
 
@@ -387,8 +536,8 @@ Compute_Momt_Frict()
    ADs VisM_( 0.0 );
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
-      re_ = FluidProperty::ReynoldsNumber( Fprop[f].DenM_, Fprop[f].VelM_, Fprop[f].VisM_, D );
-      fM_ = FluidProperty::Moody_Friction_Factor( re_ );
+      re_ = PropCalc.ReynoldsNumber( Fprop[f].DenM_, Fprop[f].VelM_, Fprop[f].VisM_, D );
+      fM_ = PropCalc.Moody_Friction_Factor( re_ );
       momt_frict[f] = fM * Fprop[f].DenM_ * Fprop[f].VelM_ * abs(Fprop[f].VelM_) / (2.0*D);
    }
 }
@@ -405,20 +554,47 @@ Compute_Momt_Gravt()
 
 // Section: Momentum
 void Discretization::
-Compute_Momt_Resid( const State& state )
+Compute_Momt_Resid( double dT )
 {
    Compute_Momt_Accum();
    Compute_Momt_Trans();
    Compute_Momt_Frict();
-   Compute_Momt_Press( state );
+   Compute_Momt_Press();
    Compute_Momt_Gravt();
 
    int Momt_ID, DF_ID;
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
       Momt_ID = MomtEqnID( f );
-      DF_ID   = DflxEqnID( f );
+      residual[ Momt_ID ] = (momt_accum[f] - momt_accum[f])/dT + momt_trans[f] + momt_press[f]
+	 + momt_frict[f] - momt_gravt[f];
+   }
+}
 
-      residual[ Momt_ID ] = 
+// Section: Drift-Flux
+void Discretization::
+Compute_Dflx_Resid()
+{
+
+   ADs c0( 0.0 ), vgj( 0.0 );
+   ADs reG( 0.0 ), reL( 0.0 ), re( 0.0 );
+   ADs L( 0.0 ), a1( 0.0 ), b1( 0.0 ), k0( 0.0 ), r( 0.0 );
+
+   // L = L_CD( HG );
+
+   // reG = ReyNum( denG, VG, visG, diameter );
+   // reL = ReyNum( denL, VL, visL, diameter );
+
+   // re = Re_CU( reG, reL );
+   // a1 = A1( re );
+   // b1 = B1( a1 );
+   // k0 = K0( denG, denL, b1 );
+   // r = R( denG, denL, b1 );
+
+   for( int f = 0; f < TOTAL_FACE_NUM; ++f )
+   {
+   //    c0 = C0_CD( Fprop[f].H_[PhaseID::G], Fprop[f].Den_[PhaseID::L], Fprop[f].Den_[PhaseID::G],
+   // 		  Fstate[f].VL, Fstate[f].VG );
+      residual[ DF_ID ] = 1.0;
    }
 }

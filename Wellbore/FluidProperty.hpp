@@ -52,7 +52,7 @@ private:
    const double g = 9.80665;
 
    double Temperature_C_to_K( double Tc )    { return Tc + 274.15; }
-   // double Temperature_F_to_R( double Tf )    { return Tf + 459.67; }
+   double Temperature_F_to_R( double Tf )    { return Tf + 459.67; }
 
    // double Density_SI_to_FD( double Den_SI )  { return Den_SI * 0.062428; }
    // double Density_FD_to_SI( double Den_FD )  { return Den_FD / 0.062428; }
@@ -66,18 +66,19 @@ private:
    //    return ret;
    // }
 
-   static ADs Bw( const ADs& Pw )
+public:
+   ADs Bw( const ADs& Pw )
    {
       ADs ret( 0.0 );
-      ret = Bwb * ( 1.0 - Cw * ( Pw - Pb ) );
+      ret = FluidProperty::Bwb * ( 1.0 - Cw * ( Pw - Pb ) );
       return ret;
    }
 
    /** viscosity **///----------------------------------------------------------------------
-   static double Viscosity_Wat()   { return VisW; }
-   static double Viscosity_Air()   { return VisA; }
+   double Viscosity_Wat()   { return VisW; }
+   double Viscosity_Air()   { return VisA; }
 
-   static double Viscosity_Mix( const ADs& HL_visL, const ADs& HG_visG )
+   ADs Viscosity_Mix( const ADs& HL_visL, const ADs& HG_visG )
    {
       ADs ret( 0.0 );
       ret = HL_visL + HG_visG;
@@ -100,20 +101,14 @@ private:
    //    return ret;
    // }
 
-   static ADs Density_Wat( const ADs& Pw )
+   ADs Density_Wat( const ADs& Pw )
    {
       ADs ret( 0.0 );
       ret = DenW_SC / Bw(Pw);
       return ret;
    }
-   static ADs Density_Wat( const ADs& Bw )
-   {
-      ADs ret( 0.0 );
-      ret = DenW_SC / Bw;
-      return ret;
-   }
 
-   static ADs Density_Air( const ADs& P, double Tc )
+   ADs Density_Air( const ADs& P, double Tc )
    {
       // SI Unit
       // pressure:              [ Pa ]
@@ -121,10 +116,10 @@ private:
       // temperature:           [ C ]
       // density:               [ Kg/m3 ]
       ADs ret( 0.0 );
-      ret = P / ( Rsp_SI * Temperature_C_to_K(Tc) );
+      ret = P / ( Rsp * Temperature_C_to_K(Tc) );
       return ret;
    }
-   static ADs Density_Air_FD( const ADs& P, double Tf )
+   ADs Density_Air_FD( const ADs& P, double Tf )
    {
       // Field Unit
       // pressure:              [ psi ]
@@ -132,12 +127,12 @@ private:
       // temperature:           [ F ]
       // density:               [ Lbm/ft3 ]
       ADs ret( 0.0 );
-      ret = 144.0 * P / ( Rsp_FD & Temperature_F_to_R(Tf) );
+      ret = 144.0 * P / ( Rsp_FD * Temperature_F_to_R(Tf) );
       return ret;
    }
 
    /** Two-Phase Mixture Density **///-------------------------------------------------------
-   static ADs Density_Mix( const ADs& HL_denL, const ADs& HG_denG )
+   ADs Density_Mix( const ADs& HL_denL, const ADs& HG_denG )
    {
       ADs ret( 0.0 );
       ret = HL_denL + HG_denG;
@@ -145,7 +140,7 @@ private:
    }
 
    /** Specific Weight **///-----------------------------------------------------------------
-   static ADs SpecificWeight( const ADs& density )
+   ADs SpecificWeight( const ADs& density )
    {
       // density:  [ Kg/m3 ]
       // SpWeight: [ N/m3 ] or [ Kg/(m2.s2) ]
@@ -153,7 +148,7 @@ private:
       ret = density * g;
       return ret;
    }
-   static ADs SpecificWeight_FD( const ADs& density )
+   ADs SpecificWeight_FD( const ADs& density )
    {
       // density:  [ Lbm/ft3 ]
       // SpWeight: [ Lbf/ft3 ]
@@ -163,7 +158,7 @@ private:
    }
 
    /** Reynolds Number **///-----------------------------------------------------------------
-   static ADs ReynoldsNumber( const ADs& den, const ADs& vel, double vis, double D )
+   ADs ReynoldsNumber( const ADs& den, const ADs& vel, double vis, double D )
    {
       // SI Unit
       // density:   [ Kg/m3 ]
@@ -174,7 +169,7 @@ private:
       ret = den * vel * D / vis;
       return ret;
    }
-   static ADs ReynoldsNumber_FD( const ADs& den, const ADs& vel, ADs vis, double D )
+   ADs ReynoldsNumber_FD( const ADs& den, const ADs& vel, ADs vis, double D )
    {
       // Field Unit
       // density:   [ Lbm/ft3 ]
@@ -187,7 +182,7 @@ private:
    }
 
    /** Frictional Factor **///--------------------------------------------------------
-   static ADs Fanning_Friction_Factor( const ADs& Re )
+   ADs Fanning_Friction_Factor( const ADs& Re )
    {
       // Use together with SI units
       ADs ret( 0.0 );
@@ -201,7 +196,7 @@ private:
       }
       return ret;
    }
-   static ADs Moody_Friction_Factor( const ADs& Re )
+   ADs Moody_Friction_Factor( const ADs& Re )
    {
       // Use together with Field units
       ADs ret( 0.0 );
