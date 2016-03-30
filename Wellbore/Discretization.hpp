@@ -320,17 +320,21 @@ void Compute_Mass_Resid( const State& state )
    }
 
    int Cell_ID;
-   const double dV = 3.1415926 / 4.0 * D * D / dX;
+   const double dV = 3.1415926 / 4.0 * D * D * dX;
 
    // well top: air source at const Q = 5 [m3/s]
    Cell_ID = 0;
    const double Qg_inj = -5.0;
+   const double Qw_inj = -2.0;
+   residual[ MassEqnID( Cell_ID, PhaseID::L ) ] -= Cprop[0].Den[PhaseID::L] * Qw_inj / dV;
    residual[ MassEqnID( Cell_ID, PhaseID::G ) ] -= Cprop[0].Den[PhaseID::G] * Qg_inj / dV;
 
    // well bottom: sink
-   c = TOTAL_CELL_NUM - 1;
-   double Qg = 
-   
+   Cell_ID = TOTAL_CELL_NUM - 1;
+   const double Qg_prd = 5.0;
+   const double Qw_prd = 2.0;
+   residual[ MassEqnID( Cell_ID, PhaseID::L ) ] -= Cprop[0].Den[PhaseID::L] * Qw_inj / dV;
+   residual[ MassEqnID( Cell_ID, PhaseID::G ) ] -= Cprop[0].Den[PhaseID::G] * Qg_inj / dV; 
 }
 
 
