@@ -27,14 +27,12 @@ struct EPRI
    ADs Re_CD( const ADs& ReG );
 
    ADs A1( const ADs& Re );
-   ADs B1( const ADs& A1 );
+   ADs B1( const ADs& Re );
 
    ADs K0( const ADs& denG, const ADs& denL, const ADs& B1 );
    ADs R(  const ADs& denG, const ADs& denL, const ADs& B1 );
 
    ADs C0_CU( const ADs& L, const ADs& K0, const ADs& r, const ADs& Hg );
-   ADs C0_CU( const ADs& HG, const ADs& denL, const ADs& denG, const ADs& VL, const ADs& VG,
-	      const ADs& visL, const ADs visG , double diameter);
 
    ADs C0_CD( const ADs& L,   const ADs& K0, const ADs& r,   const ADs& Hg,
 	      const ADs& Vgj, const ADs& C1, const ADs& VsG, const ADs& VsL );
@@ -49,16 +47,15 @@ struct EPRI
    ADs C1( const ADs& Hg, const ADs& C1x );
 
    ADs C5( const ADs& denG, const ADs& denL );
-
-   ADs C2( const ADs& denG, const ADs& denL, const ADs& C5 );
+   ADs C2( const ADs& denG, const ADs& denL );
 
    ADs B2( const ADs& ReL );
 
    ADs C3_CU( const ADs& ReL );
-   ADs C3_CD( const ADs& C10, const ADs& B2 );
+   ADs C3_CD( const ADs& ReL, const ADs& C10 );
 
    double C7( double Dh );
-   double C4( double C7 );
+   double C4( double Dh );
 
    ADs Vgj( const ADs& denG, const ADs& denL,
 	    const ADs& C1,   const ADs& C2,
@@ -73,12 +70,10 @@ struct EPRI
    ADs Gamma_CD( const ADs& ReG, const ADs& ReL, const ADs& Jfrx, double Dh );
 
    ADs C10_1( const ADs& ReL, const ADs& gamma, double Dh );
+   ADs C10_2( const ADs& ReL, const ADs& Jfrx,  double Dh );
+   ADs C10_3( const ADs& ReL, const ADs& Jfrx,  double Dh );
 
-   ADs C10_2( const ADs& ReL, const ADs& Jfrx, double Dh );
-
-   ADs C10_3( const ADs& ReL, const ADs& Jfrx, double Dh );
-
-   ADs C10( const ADs& C10_1, const ADs& C10_2, const ADs& C10_3 );
+   ADs C10( const ADs& ReL, const ADs& gamma, const ADs& Jfrx,  double Dh );
 };
 
 
@@ -158,9 +153,9 @@ ADs EPRI::A1( const ADs& Re )
 }
 
 // Section: C0/
-ADs EPRI::B1( const ADs& A1 )
+ADs EPRI::B1( const ADs& Re )
 {
-   return Min( 0.8, A1 );
+   return Min( 0.8, A1(Re) );
 }
 
 // Section: C0/
@@ -186,37 +181,8 @@ ADs EPRI::C0_CU( const ADs& L, const ADs& K0, const ADs& r, const ADs& Hg )
    ret = L / ( K0 + (1.0-K0) * pow( Hg, r ) );
    return ret;
 }
-ADs EPRI::
-C0_CU( const ADs& HG, const ADs& denL, const ADs& denG, const ADs& VL, const ADs& VG,
-       const ADs& visL, const ADs visG , double diameter)
-{
-   ADs L( 0.0 );
-   L = L_CU( HG );
 
-   ADs reG( 0.0 ), reL( 0.0 );
-   reG = ReyNum( denG, VG, visG, diameter );
-   reL = ReyNum( denL, VL, visL, diameter );
-
-   ADs re( 0.0 );
-   re = Re_CU( reG, reL );
-
-   ADs a1( 0.0 );
-   a1 = A1( re );
-
-   ADs b1( 0.0 );
-   b1 = B1( a1 );
-
-   ADs k0( 0.0 );
-   k0 = K0( denG, denL, b1 );
-
-   ADs r( 0.0 );
-   r = R( denG, denL, b1 );
-
-   return C0_CU( L, k0, r, HG );
-}
-
-
-
+// Section: C0/
 ADs EPRI::C0_CD( const ADs& L,   const ADs& K0, const ADs& r,   const ADs& Hg,
 		 const ADs& Vgj, const ADs& C1, const ADs& VsG, const ADs& VsL )
 {
@@ -268,28 +234,31 @@ ADs EPRI::C5( const ADs& denG, const ADs& denL )
 }
 
 // Section: Vgj/
-ADs EPRI::C2( const ADs& denG, const ADs& denL, const ADs& C5 )
+ADs EPRI::C2( const ADs& denG, const ADs& denL )
 {
-   ADs tmp( 0.0 );
+   ADs c5( 0.0 );
+   c5 = C5( denG, denL );
+
+   ADs ret( 0.0 );
    double ratio = denL.value() / denG.value();
    if( ratio <= 18.0 )
    {
       ADs ratio_ADs( 0.0 );
       ratio_ADs = denL/denG;
-      tmp = 0.4757 * pow( log(ratio_ADs), 0.7 );
+      ret = 0.4757 * pow( log(ratio_ADs), 0.7 );
    }
    else
    {
-      if( C5.value() >= 1.0 )
+      if( c5.value() >= 1.0 )
       {
-	 tmp = 1.0;
+	 ret = 1.0;
       }
       else
       {
-	 tmp = 1.0 - exp( -C5 / (1.0-C5 ) );
+	 ret = 1.0 - exp( -c5 / (1.0-c5 ) );
       }
    }
-   return tmp;
+   return ret;
 }
 
 // Section: Vgj/
@@ -312,8 +281,11 @@ ADs EPRI::C3_CU( const ADs& ReL )
 }
 
 // Section: Vgj/
-ADs EPRI::C3_CD( const ADs& C10, const ADs& B2 )
+ADs EPRI::C3_CD( const ADs& ReL, const ADs& C10 );
 {
+   ADs b2( 0.0 );
+   b2 = B2( ReL );
+
    ADs tmp( 0.0 );
    tmp = 2.0 * pow( C10/2.0, B2 );
 
@@ -326,16 +298,17 @@ double EPRI::C7( double Dh )
    return std::pow( 0.09144/Dh, 0.6 );
 }
 
-double EPRI::C4( double C7 )
+double EPRI::C4( double Dh )
 {
+   double c7 = C7( Dh );
    double ret;
-   if( C7 >= 1.0 )
+   if( c7 >= 1.0 )
    {
       ret = 1.0;
    }
    else
    {
-      ret = 1.0 / ( 1.0 - std::exp(-C7/(1.0-C7)) );
+      ret = 1.0 / ( 1.0 - std::exp(-c7/(1.0-c7)) );
    }
    return ret;
 }
@@ -406,9 +379,14 @@ ADs EPRI::C10_3( const ADs& ReL, const ADs& Jfrx, double Dh )
    return ret;
 }
 
-ADs EPRI::C10( const ADs& C10_1, const ADs& C10_2, const ADs& C10_3 )
+ADs EPRI::C10( const ADs& ReL, const ADs& gamma, const ADs& Jfrx,  double Dh )
 {
+   ADs c10_1( 0.0 ), c10_2( 0.0 ), c10_3( 0.0 );
+   c10_1 = C10_1( ReL, gamma, Dh );
+   c10_2 = C10_2( ReL, Jfrx,  Dh );
+   c10_3 = C10_3( ReL, Jfrx,  Dh );
+
    ADs ret( 0.0 );
-   ret = C10_1 + C10_2 + C10_3;
+   ret = c10_1 + c10_2 + c10_3;
    return ret;
 }

@@ -46,6 +46,7 @@ private:
    {
       ADs H_[2];
       ADs Den_[2];
+      ADs Vis_[2];
       ADs H_Den_[2]; // FaceProp_Upwind
       ADs H_Vis_[2]; // FaceProp_Upwind
       ADs DenM_;     // FaceProp_Upwind
@@ -72,6 +73,9 @@ public:
    const int TOTAL_FACE_NUM;
    const int dX;
    const int D;
+   const double g;
+   const double surface_tension;
+   const double theta;
    
    CellVector Cprop;
    FaceVector Fprop;
@@ -99,7 +103,7 @@ public:
    FluidProperty PropCalc;
 
 public:
-   Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _dX, int _D );
+   Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _dX, int _D, double _theta );
 
    // Node and face indices
    // '|' indicates CV face
@@ -121,7 +125,7 @@ public:
 
    int MassEqnID( int c, int phaseID )  { return 4 * c + phaseID; }
    int MomtEqnID( int f )               { return 4 * f + 2; }
-   int DflxEqnID( int f )               { return 4 * f + 3; }
+   int DFlxEqnID( int f )               { return 4 * f + 3; }
 
    void Transfer_StateVector( const StateVector& state );
    void Initiate_State( StateVector& state );
@@ -155,15 +159,18 @@ public:
    void Compute_Momt_Resid( double dT );
 
    // Section: Drift-Flux
-   void Compute_Dflx_Resid();
+   void Compute_DFlx_Resid();
 };
 
-Discretization::Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _DX, int _D ) :
+Discretization::Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _DX, int _D, double _theta ) :
    PHASE_NUM( _PHASE_NUM ),
    TOTAL_CELL_NUM( _TOTAL_CELL_NUM ),
    TOTAL_FACE_NUM( _TOTAL_CELL_NUM - 1 ),
    dX( _DX ),
    D( _D ),
+   g( 9.80665 ), [ m/s2 ]
+   surface_tension( 72.75E-03 ), // [ N/m ]
+   theta( _theta ),
    Cprop(  TOTAL_CELL_NUM ),
    Fprop(  TOTAL_FACE_NUM ),
    Cstate( TOTAL_CELL_NUM ),
@@ -204,7 +211,7 @@ Initiate_State( StateVector& state )
       state[f].VG = 0.0;
       //
       state[f].VL.make_independent( MomtEqnID(f) );
-      state[f].VG.make_independent( DflxEqnID(f) );
+      state[f].VG.make_independent( DFlxEqnID(f) );
    }
 }
 
@@ -234,7 +241,7 @@ discretize( const StateVector& state, double dT )
    Compute_Properties();
    Compute_Mass_Resid( dT );
    Compute_Momt_Resid( dT );
-   Compute_Dflx_Resid();
+   Compute_DFlx_Resid();
 
    std::size_t eqn_massL, eqn_massG;
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
@@ -248,7 +255,7 @@ discretize( const StateVector& state, double dT )
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
       eqn_momt = MomtEqnID( f );
-      eqn_dflx = DflxEqnID( f );
+      eqn_dflx = DFlxEqnID( f );
       if( !std::isfinite( residual[ eqn_momt ].value() ) ) is_badvalue = true;
       if( !std::isfinite( residual[ eqn_dflx ].value() ) ) is_badvalue = true;
    }
@@ -272,7 +279,7 @@ update_state( StateVector& state, const R& update, bool do_safeguard )
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
       eqn_momt = MomtEqnID( f );
-      eqn_dflx = DflxEqnID( f );
+      eqn_dflx = DFlxEqnID( f );
 
       state[f].VL += update[ eqn_momt ];
       state[f].VG += update[ eqn_dflx ];
@@ -333,8 +340,8 @@ Compute_FaceProp_Upwind()
       HL = 1.0 - Cstate[C].HG;
       Fprop[f].H_[PhaseID::L]     = HL;
       Fprop[f].Den_[PhaseID::L]   = Cprop[C].Den[PhaseID::L];
+      Fprop[f].Vis_[PhaseID::L]   = PropCalc.Viscosity_Wat();
       Fprop[f].H_Den_[PhaseID::L] = HL * Cprop[C].Den[PhaseID::L];
-      Fprop[f].H_Vis_[PhaseID::L] = HL * PropCalc.Viscosity_Wat();
 
       // gas
       if( Fstate[f].VG.value() >= 0.0 )   C = LC;
@@ -342,14 +349,14 @@ Compute_FaceProp_Upwind()
       HG = Cstate[C].HG;
       Fprop[f].H_[PhaseID::G]     = HG;
       Fprop[f].Den_[PhaseID::G]   = Cprop[C].Den[PhaseID::G];
+      Fprop[f].Vis_[PhaseID::L]   = PropCalc.Viscosity_Wat();
       Fprop[f].H_Den_[PhaseID::G] = HG * Cprop[C].Den[PhaseID::G];
-      Fprop[f].H_Vis_[PhaseID::G] = HG * PropCalc.Viscosity_Air();
 
       // mixture: DenM_, VelM_
       Fprop[f].DenM_ = PropCalc.Density_Mix(   Fprop[f].H_Den_[PhaseID::L],
 					       Fprop[f].H_Den_[PhaseID::G] );
-      Fprop[f].VisM_ = PropCalc.Viscosity_Mix( Fprop[f].H_Vis_[PhaseID::L],
-					       Fprop[f].H_Vis_[PhaseID::G] );
+      Fprop[f].VisM_ = PropCalc.Viscosity_Mix( Fprop[f].H_[PhaseID::L], Vis_[PhaseID::L],
+					       Fprop[f].H_[PhaseID::G], Vis_[PhaseID::G] );
 
       Fprop[f].VelM_ = ( Fprop[f].H_Den_[PhaseID::L] * Fstate[f].VL +
 			 Fprop[f].H_Den_[PhaseID::G] * Fstate[f].VG ) / Fprop[f].DenM_;
@@ -482,8 +489,8 @@ Compute_Mass_Resid( double dT )
    Cell_ID = TOTAL_CELL_NUM - 1;
    const double Qg_prd = 5.0;
    const double Qw_prd = 2.0;
-   residual[ MassEqnID( Cell_ID, PhaseID::L ) ] -= Cprop[0].Den[PhaseID::L] * Qw_inj / dV;
-   residual[ MassEqnID( Cell_ID, PhaseID::G ) ] -= Cprop[0].Den[PhaseID::G] * Qg_inj / dV; 
+   residual[ MassEqnID( Cell_ID, PhaseID::L ) ] -= Cprop[0].Den[PhaseID::L] * Qw_prd / dV;
+   residual[ MassEqnID( Cell_ID, PhaseID::G ) ] -= Cprop[0].Den[PhaseID::G] * Qg_prd / dV; 
 }
 
 
@@ -538,7 +545,7 @@ Compute_Momt_Frict()
    {
       re_ = PropCalc.ReynoldsNumber( Fprop[f].DenM_, Fprop[f].VelM_, Fprop[f].VisM_, D );
       fM_ = PropCalc.Moody_Friction_Factor( re_ );
-      momt_frict[f] = fM * Fprop[f].DenM_ * Fprop[f].VelM_ * abs(Fprop[f].VelM_) / (2.0*D);
+      momt_frict[f] = fM_ * Fprop[f].DenM_ * Fprop[f].VelM_ * fabs(Fprop[f].VelM_) / (2.0*D);
    }
 }
 
@@ -562,10 +569,9 @@ Compute_Momt_Resid( double dT )
    Compute_Momt_Press();
    Compute_Momt_Gravt();
 
-   int Momt_ID, DF_ID;
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
-      Momt_ID = MomtEqnID( f );
+      int Momt_ID = MomtEqnID( f );
       residual[ Momt_ID ] = (momt_accum[f] - momt_accum[f])/dT + momt_trans[f] + momt_press[f]
 	 + momt_frict[f] - momt_gravt[f];
    }
@@ -573,28 +579,101 @@ Compute_Momt_Resid( double dT )
 
 // Section: Drift-Flux
 void Discretization::
-Compute_Dflx_Resid()
+Compute_DFlx_Resid()
 {
 
    ADs c0( 0.0 ), vgj( 0.0 );
    ADs reG( 0.0 ), reL( 0.0 ), re( 0.0 );
    ADs L( 0.0 ), a1( 0.0 ), b1( 0.0 ), k0( 0.0 ), r( 0.0 );
+   ADS c1( 0.0 ), c2( 0.0 ), c3( 0.0 );
+   ADs c1x( 0.0 ), c5( 0.0 );
+   double c4, c7;
 
-   // L = L_CD( HG );
-
-   // reG = ReyNum( denG, VG, visG, diameter );
-   // reL = ReyNum( denL, VL, visL, diameter );
-
-   // re = Re_CU( reG, reL );
-   // a1 = A1( re );
-   // b1 = B1( a1 );
-   // k0 = K0( denG, denL, b1 );
-   // r = R( denG, denL, b1 );
-
+   int status;
+   double cos_theta = std::cos( theta );
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
-   //    c0 = C0_CD( Fprop[f].H_[PhaseID::G], Fprop[f].Den_[PhaseID::L], Fprop[f].Den_[PhaseID::G],
-   // 		  Fstate[f].VL, Fstate[f].VG );
-      residual[ DF_ID ] = 1.0;
+      const ADs& VL = Fstate[f].VL;
+      const ADs& VG = Fstate[f].VG;
+
+      const ADs& HL = Fprop[f].H_[ PhaseID::L ];
+      const ADs& HG = Fprop[f].H_[ PhaseID::G ];
+
+      const ADs& denL = Fprop[f].Den_[ PhaseID::L ];
+      const ADs& denG = Fprop[f].Den_[ PhaseID::G ];
+
+      const ADs& visL = Fprop[f].Vis_[ PhaseID::L ];
+      const ADs& visG = Fprop[f].Vis_[ PhaseID::G ];
+
+      if( cos_theta * VL.value() >= 0.0 && cos_theta * VG.value() >= 0.0 )
+	 status = 0; // co-down
+      else if( cos_theta * VL.value() < 0.0 && cos_theta * VG.value() < 0.0 )
+	 status = 1; // co-up
+      else
+	 status = 2; // counter-current
+
+      reL = ReyNum( denL, VL, visL, D );
+      reG = ReyNum( denG, VG, visG, D );
+
+      // < b1 > in all cases for convenience (avoid one more switch-statement)
+      switch( status )
+      {
+	 case 0:    // co-down
+	    L   = L_CD( HG );
+	    re  = Re_CD( reG );
+	    b1  = B1( re );
+	    c1x = C1x_CD();
+	    break;
+
+	 case 1:    // co-up
+	    L   = L_CU( HG );
+	    re  = Re_CU( reG, reL );
+	    b1  = B1( re );
+	    c1x = C1x_CU( b1 );
+	    break;
+
+	 case 2:    // counter-current
+	    b1 = B1( re );
+	    break;
+      }
+
+      k0 = K0( denG, denL, b1 );
+      r  = R(  denG, denL, b1 );
+
+      c1 = C1( HG,   c1x );
+      c2 = C2( denG, denL );
+      c4 = C4( D );
+
+      vsL   = HL * VL;
+      vsG   = HG * VG;
+      vs    = VsL + vsG;
+
+      // Note
+      // compute < vgj > first because it's needed in < C0_CD >
+      switch( status )
+      {
+	 case 0:    // co-down
+	    jfrx  = Jfrx_CD();
+	    gamma = Gamma_CD( reG, reL, jfrx, D );
+	    c10   = C10( reL, gamma, jfrx,  D );
+	    c3    = c3_CD( reL, c10 );
+	    //
+	    vgj = Vgj( denG, denL, c1, c2, c3, c4, D, g, surface_tension );
+	    c0  = C0_CD( L, k0, r, HG, vgj, c1, vsG, vsL );
+	    break;
+
+	 case 1:    // co-up
+	    c3  = C3_CU( reL );
+	    //
+	    vgj = Vgj( denG, denL, c1, c2, c3, c4, D, g, surface_tension );
+	    c0  = C0_CU( L, k0, r, HG );
+	    break;
+
+	 case 2:    // counter-current
+	    break;
+      }
+
+      int DFlx_ID = DFlxEqnID( f );
+      residual[ DFlx_ID ] = Fstate[f].VG - c0*vs - vgj;
    }
 }

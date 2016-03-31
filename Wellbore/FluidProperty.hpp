@@ -38,8 +38,8 @@ private:
 
    /** viscosoty [ Pa.s ] at [ 50C ] **///--------------------------------------------------
    //const ADs VisO = 1.1; // cp
-   const double VisW = 0.547E-03;
-   const double VisA = 1.962E-05; 
+   const ADs VisW = 0.547E-03;
+   const ADs VisA = 1.962E-05; 
 
    /** reference formation volume factor **///--------------------------------------------
    const double Bwb = 1.0;
@@ -75,13 +75,14 @@ public:
    }
 
    /** viscosity **///----------------------------------------------------------------------
-   double Viscosity_Wat()   { return VisW; }
-   double Viscosity_Air()   { return VisA; }
+   ADs Viscosity_Wat()   { return VisW; }
+   ADs Viscosity_Air()   { return VisA; }
 
-   ADs Viscosity_Mix( const ADs& HL_visL, const ADs& HG_visG )
+   ADs Viscosity_Mix( const ADs& HL, const ADs& visL, 
+		      const ADs& HG, const ADs& visG )
    {
       ADs ret( 0.0 );
-      ret = HL_visL + HG_visG;
+      ret = HL * visL + HG * visG;
       return ret;
    }
 
@@ -158,7 +159,7 @@ public:
    }
 
    /** Reynolds Number **///-----------------------------------------------------------------
-   ADs ReynoldsNumber( const ADs& den, const ADs& vel, double vis, double D )
+   ADs ReynoldsNumber( const ADs& den, const ADs& vel, const ADs& vis, double D )
    {
       // SI Unit
       // density:   [ Kg/m3 ]
@@ -169,7 +170,7 @@ public:
       ret = den * vel * D / vis;
       return ret;
    }
-   ADs ReynoldsNumber_FD( const ADs& den, const ADs& vel, ADs vis, double D )
+   ADs ReynoldsNumber_FD( const ADs& den, const ADs& vel, const ADs vis, double D )
    {
       // Field Unit
       // density:   [ Lbm/ft3 ]
