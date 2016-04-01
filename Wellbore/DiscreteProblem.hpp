@@ -195,7 +195,20 @@ DiscreteProblem::DiscreteProblem( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _DX, 
    Cprop(  TOTAL_CELL_NUM ),
    Fprop(  TOTAL_FACE_NUM ),
    Cstate( TOTAL_CELL_NUM ),
-   Fstate( TOTAL_FACE_NUM )
+   Fstate( TOTAL_FACE_NUM ),
+   mass_accumL( std::size_t(TOTAL_CELL_NUM), 0.0 ),
+   mass_accumG( std::size_t(TOTAL_CELL_NUM), 0.0 ),
+   mass_transL( std::size_t(TOTAL_CELL_NUM), 0.0 ),
+   mass_transG( std::size_t(TOTAL_CELL_NUM), 0.0 ),
+   mass_accumL_old( std::size_t(TOTAL_CELL_NUM), 0.0 ),
+   mass_accumG_old( std::size_t(TOTAL_CELL_NUM), 0.0 ),
+   momt_accum( std::size_t(TOTAL_FACE_NUM), 0.0 ),
+   momt_accum_old( std::size_t(TOTAL_FACE_NUM), 0.0 ),
+   momt_trans( std::size_t(TOTAL_FACE_NUM), 0.0 ),
+   momt_press( std::size_t(TOTAL_FACE_NUM), 0.0 ),
+   momt_frict( std::size_t(TOTAL_FACE_NUM), 0.0 ),
+   momt_gravt( std::size_t(TOTAL_FACE_NUM), 0.0 ),
+   residual( std::size_t(TOTAL_CELL_NUM)*2 + std::size_t(TOTAL_FACE_NUM)*2, 0.0 )
 {
    Setup_SS();
 }
@@ -218,6 +231,7 @@ Transfer_StateVector( const StateVector& state )
 void DiscreteProblem::
 initialize_state( StateVector& state )
 {
+   state.resize( TOTAL_CELL_NUM );
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
    {
       state[c].HG = 0.4;
@@ -383,8 +397,8 @@ Compute_CellProp_PropCacl()
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
    {
       Cprop[c].Den[PhaseID::L] = PropCalc.Density_Wat( Cstate[c].P );
-      Cprop[c].Den[PhaseID::G] = PropCalc.Density_Air( Cstate[c].P, 50.0 );
-      Cprop[c].DenM = PropCalc.Density_Mix( Cstate[c].HG * Cprop[c].Den[PhaseID::L],
+      Cprop[c].Den[PhaseID::G] = PropCalc.Density_Air( Cstate[c].P, 25.0 );
+      Cprop[c].DenM = PropCalc.Density_Mix( (1.0-Cstate[c].HG) * Cprop[c].Den[PhaseID::L],
 					    Cstate[c].HG * Cprop[c].Den[PhaseID::G] );
    }
 }
@@ -787,6 +801,29 @@ std::ostream & operator << ( std::ostream & ostr,
         << _out.NormSat[1]  << "\t"
         << _out.MatBal[0]  << "\t"
         << _out.MatBal[1]  << std::endl;
+
+   return ostr;
+}
+
+
+std::ostream & operator << ( std::ostream & ostr,
+                             const DiscreteProblem::StateVector & _out )
+{
+  std::size_t C = _out.size();
+  std::cout << "TOTAL_CELL_NUM = " << C << std::endl;
+
+  for( std::size_t c = 0; c < C; ++c )
+    {
+      std::cout << "------------------------------- In Cell # " << c << std::endl;
+      ostr << "HG = " << _out[c].HG.value()  << std::endl
+           << "P  = " << _out[c].P.value()  << std::endl;
+    }
+  for( std::size_t f = 0; f < C-1; ++f )
+    {
+      std::cout << "------------------------------- In Cell # " << f << std::endl;
+      ostr << "VL = " << _out[f].VL.value()  << std::endl
+           << "VG = " << _out[f].VG.value()  << std::endl;
+    }
 
    return ostr;
 }
