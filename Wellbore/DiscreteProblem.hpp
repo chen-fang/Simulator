@@ -1,10 +1,12 @@
 #pragma once
 #include <vector>
+
+#include "PropertyCalculator.hpp"
 #include "Drift-Flux/EPRI.hpp"
 
 typedef std::vector<double> Vec;
 
-class Discretization
+class DiscreteProblem
 {
 //private:
 public:
@@ -117,7 +119,7 @@ public:
    EPRI epri;
 
 public:
-   Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _dX, int _D, double _theta );
+   DiscreteProblem( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _dX, int _D, double _theta );
 
    // Node and face indices
    // '|' indicates CV face
@@ -180,7 +182,7 @@ public:
    void Compute_SS();
 };
 
-Discretization::Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _DX, int _D, double _theta ) :
+DiscreteProblem::DiscreteProblem( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _DX, int _D, double _theta ) :
    PHASE_NUM( _PHASE_NUM ),
    TOTAL_CELL_NUM( _TOTAL_CELL_NUM ),
    TOTAL_FACE_NUM( _TOTAL_CELL_NUM - 1 ),
@@ -197,7 +199,7 @@ Discretization::Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _DX, in
    Setup_SS();
 }
 
-void Discretization::
+void DiscreteProblem::
 Transfer_StateVector( const StateVector& state )
 {
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
@@ -212,7 +214,7 @@ Transfer_StateVector( const StateVector& state )
    }
 }
 
-void Discretization::
+void DiscreteProblem::
 initiate_state( StateVector& state )
 {
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
@@ -233,7 +235,7 @@ initiate_state( StateVector& state )
    }
 }
 
-void Discretization::
+void DiscreteProblem::
 bind_to_old_state( const StateVector& old_state )
 {
    Transfer_StateVector( old_state );
@@ -251,7 +253,7 @@ bind_to_old_state( const StateVector& old_state )
    }
 }
 
-bool Discretization::
+bool DiscreteProblem::
 discretize( const StateVector& state, double dT )
 {
    bool is_badvalue = false;
@@ -282,7 +284,7 @@ discretize( const StateVector& state, double dT )
 }
 
 template< typename R >
-void Discretization::
+void DiscreteProblem::
 update_state( StateVector& state, const R& update, bool do_safeguard )
 {
    std::size_t eqn_massL, eqn_massG;
@@ -306,7 +308,7 @@ update_state( StateVector& state, const R& update, bool do_safeguard )
 }
 
 template< typename V, typename M >
-void Discretization::
+void DiscreteProblem::
 extract_R_J( V&r, M& m, std::size_t offset )
 {
    residual.extract_CSR( r, m.rowptr(), m.colind(), m.value() );
@@ -327,7 +329,7 @@ extract_R_J( V&r, M& m, std::size_t offset )
 // ------------- Staggered grid scheme -----------------
 // -----------------------------------------------------
 // Section: Property
-void Discretization::
+void DiscreteProblem::
 Compute_CellProp_PropCacl()
 {
    // DenL, DenG, DenM
@@ -341,7 +343,7 @@ Compute_CellProp_PropCacl()
 }
 
 // Section: Property
-void Discretization::
+void DiscreteProblem::
 Compute_FaceProp_Upwind()
 {
    // H_Den_, DenM_, VelM_
@@ -383,7 +385,7 @@ Compute_FaceProp_Upwind()
 }
 
 // Section: Property
-void Discretization::
+void DiscreteProblem::
 Compute_CellProp_Upwind()
 {
    // VelM
@@ -428,7 +430,7 @@ Compute_CellProp_Upwind()
 }
 
 // Section: Property
-void Discretization::
+void DiscreteProblem::
 Compute_Properties()
 {
    Compute_CellProp_PropCacl();
@@ -437,7 +439,7 @@ Compute_Properties()
 }
 
 // Section: Mass
-void Discretization::
+void DiscreteProblem::
 Compute_Mass_Accum()
 {
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
@@ -448,7 +450,7 @@ Compute_Mass_Accum()
 }
 
 // Section: Mass
-void Discretization::
+void DiscreteProblem::
 Compute_Mass_Trans()
 {
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
@@ -475,7 +477,7 @@ Compute_Mass_Trans()
 }
 
 // Section: Mass
-void Discretization::
+void DiscreteProblem::
 Compute_Mass_Resid( double dT )
 {
    Compute_Mass_Accum();
@@ -499,7 +501,7 @@ Compute_Mass_Resid( double dT )
 
 
 // Section: Momentum
-void Discretization::
+void DiscreteProblem::
 Compute_Momt_Accum()
 {
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
@@ -509,7 +511,7 @@ Compute_Momt_Accum()
 }
 
 // Section: Momentum
-void Discretization::
+void DiscreteProblem::
 Compute_Momt_Trans()
 {
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
@@ -522,7 +524,7 @@ Compute_Momt_Trans()
 }
 
 // Section: Momentum
-void Discretization::
+void DiscreteProblem::
 Compute_Momt_Press()
 {
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
@@ -534,7 +536,7 @@ Compute_Momt_Press()
 }
 
 // Section: Momentum
-void Discretization::
+void DiscreteProblem::
 Compute_Momt_Frict()
 {
    // Units
@@ -554,7 +556,7 @@ Compute_Momt_Frict()
 }
 
 // Section: Momentum
-void Discretization::
+void DiscreteProblem::
 Compute_Momt_Gravt()
 {
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
@@ -564,7 +566,7 @@ Compute_Momt_Gravt()
 }
 
 // Section: Momentum
-void Discretization::
+void DiscreteProblem::
 Compute_Momt_Resid( double dT )
 {
    Compute_Momt_Accum();
@@ -582,7 +584,7 @@ Compute_Momt_Resid( double dT )
 }
 
 // Section: Drift-Flux
-void Discretization::
+void DiscreteProblem::
 Compute_DFlx_Resid()
 {
 
@@ -684,7 +686,7 @@ Compute_DFlx_Resid()
    }
 }
 
-void Discretization::
+void DiscreteProblem::
 Setup_SS()
 {
    ss.resize( 2 );
@@ -705,7 +707,7 @@ Setup_SS()
    ss[1].Q[ PhaseID::L ] = 1.0;
 }
 
-void Discretization::
+void DiscreteProblem::
 Compute_SS()
 {
    const double dV = 3.1415926 / 4.0 * D * D * dX;
