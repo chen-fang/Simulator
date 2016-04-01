@@ -144,9 +144,10 @@ public:
    int DFlxEqnID( int f )               { return 4 * f + 3; }
 
    void Transfer_StateVector( const StateVector& state );
-   void initiate_state( StateVector& state );
+   void initialize_state( StateVector& state );
    void bind_to_old_state( const StateVector& old_state );
    bool discretize( const StateVector& state, double dT );
+   bool is_converged( ConvergenceInfo& nrm );
 
    template< typename R >
    void update_state( StateVector& state, const R& update, bool do_safeguard );
@@ -215,7 +216,7 @@ Transfer_StateVector( const StateVector& state )
 }
 
 void DiscreteProblem::
-initiate_state( StateVector& state )
+initialize_state( StateVector& state )
 {
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
    {
@@ -281,6 +282,50 @@ discretize( const StateVector& state, double dT )
       if( !std::isfinite( residual[ eqn_dflx ].value() ) ) is_badvalue = true;
    }
    return is_badvalue;
+}
+
+bool DiscreteProblem::
+is_converged( ConvergenceInfo& nrm )
+{
+   bool is_MATBAL_converged = true;
+   bool is_NRMSAT_converged = true;
+
+   double max_R = 0.0;
+   for ( int c=0; c<TOTAL_CELL_NUM; ++c )
+   {
+      double R = std::abs(residual[ MassEqnID( c, PhaseID::L ) ].value());
+      if(R > max_R)   max_R = R;
+   }
+   nrm.NormSat[0] = max_R;
+   //
+   for ( int c=0; c<TOTAL_CELL_NUM; ++c )
+   {
+      double R = std::abs(residual[ MassEqnID( c, PhaseID::G ) ].value());
+      if(R > max_R)   max_R = R;
+   }
+   nrm.NormSat[0] = max_R;
+   //
+   //
+   for ( int f=0; f<TOTAL_FACE_NUM; ++f )
+   {
+      double R = std::abs(residual[ MomtEqnID(f) ].value());
+      if(R > max_R)   max_R = R;
+   }
+   nrm.NormSat[1] = max_R;
+   //   
+   for ( int f=0; f<TOTAL_FACE_NUM; ++f )
+   {
+      double R = std::abs(residual[ DFlxEqnID(f) ].value());
+      if(R > max_R)   max_R = R;
+   }
+   nrm.NormSat[1] = max_R;
+   //
+
+   for( int group=0; group<2; ++group )
+      if ( nrm.NormSat[ group ] > 1.0E-06 )  is_NRMSAT_converged = false;
+
+   return ( is_MATBAL_converged && is_NRMSAT_converged );
+
 }
 
 template< typename R >
