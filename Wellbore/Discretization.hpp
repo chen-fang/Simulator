@@ -61,6 +61,16 @@ private:
       double NormSat[2];
    }                                        ConvergenceInfo;
 
+   enum SSMode{ FixQ=0, FixP=1 };
+   typedef struct
+   {
+      std::size_t loc;
+      bool        is_source;
+      int         mode;       // [0]-const rate / [1]-pressure
+      double      Q[2];       // for: const rate
+      double      P;          // for: const pressure
+   }                                        SS;
+      
 //private:
 public:
    // Data from previous time step
@@ -97,10 +107,13 @@ public:
    ADv momt_press;
    ADv momt_frict;
    ADv momt_gravt;
+   // for source_sink
+   std::vector< SS > ss;
    
    ADv residual;
 
    FluidProperty PropCalc;
+   EPRI epri;
 
 public:
    Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _dX, int _D, double _theta );
@@ -128,7 +141,7 @@ public:
    int DFlxEqnID( int f )               { return 4 * f + 3; }
 
    void Transfer_StateVector( const StateVector& state );
-   void Initiate_State( StateVector& state );
+   void initiate_state( StateVector& state );
    void bind_to_old_state( const StateVector& old_state );
    bool discretize( const StateVector& state, double dT );
 
@@ -160,6 +173,10 @@ public:
 
    // Section: Drift-Flux
    void Compute_DFlx_Resid();
+
+   // Source & Sink
+   void Setup_SS();
+   void Compute_SS();
 };
 
 Discretization::Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _DX, int _D, double _theta ) :
@@ -168,7 +185,7 @@ Discretization::Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _DX, in
    TOTAL_FACE_NUM( _TOTAL_CELL_NUM - 1 ),
    dX( _DX ),
    D( _D ),
-   g( 9.80665 ), [ m/s2 ]
+   g( 9.80665 ), // [ m/s2 ]
    surface_tension( 72.75E-03 ), // [ N/m ]
    theta( _theta ),
    Cprop(  TOTAL_CELL_NUM ),
@@ -176,7 +193,7 @@ Discretization::Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _DX, in
    Cstate( TOTAL_CELL_NUM ),
    Fstate( TOTAL_FACE_NUM )
 {
-
+   Setup_SS;
 }
 
 void Discretization::
@@ -199,11 +216,11 @@ Initiate_State( StateVector& state )
 {
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
    {
-      state[c].HG = 0.6;
-      state[c].P  = 2.0E+07; // Pa
+      state[c].HG = 0.4;
+      state[c].P  = 101.325E+03; // Pa
       //
       state[c].HG.make_independent( MassEqnID(c,PhaseID::L) );
-      state[c].P.make_independent(  MassEqnID(c,PhaseID::G) );
+      //state[c].P.make_independent(  MassEqnID(c,PhaseID::G) );
    }
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
@@ -240,6 +257,7 @@ discretize( const StateVector& state, double dT )
    Transfer_StateVector( state );
    Compute_Properties();
    Compute_Mass_Resid( dT );
+   Compute_SS();
    Compute_Momt_Resid( dT );
    Compute_DFlx_Resid();
 
@@ -355,8 +373,8 @@ Compute_FaceProp_Upwind()
       // mixture: DenM_, VelM_
       Fprop[f].DenM_ = PropCalc.Density_Mix(   Fprop[f].H_Den_[PhaseID::L],
 					       Fprop[f].H_Den_[PhaseID::G] );
-      Fprop[f].VisM_ = PropCalc.Viscosity_Mix( Fprop[f].H_[PhaseID::L], Vis_[PhaseID::L],
-					       Fprop[f].H_[PhaseID::G], Vis_[PhaseID::G] );
+      Fprop[f].VisM_ = PropCalc.Viscosity_Mix( Fprop[f].H_[PhaseID::L], Fprop[f].Vis_[PhaseID::L],
+					       Fprop[f].H_[PhaseID::G], Fprop[f].Vis_[PhaseID::G] );
 
       Fprop[f].VelM_ = ( Fprop[f].H_Den_[PhaseID::L] * Fstate[f].VL +
 			 Fprop[f].H_Den_[PhaseID::G] * Fstate[f].VG ) / Fprop[f].DenM_;
@@ -475,22 +493,7 @@ Compute_Mass_Resid( double dT )
       residual[ MassG_ID ] = ( mass_accumL[c] - mass_accumG_old[c] ) / dT + mass_transG[c];
    }
 
-   int Cell_ID;
-   const double dV = 3.1415926 / 4.0 * D * D * dX;
 
-   // well top: air source at const Q = 5 [m3/s]
-   Cell_ID = 0;
-   const double Qg_inj = -5.0;
-   const double Qw_inj = -2.0;
-   residual[ MassEqnID( Cell_ID, PhaseID::L ) ] -= Cprop[0].Den[PhaseID::L] * Qw_inj / dV;
-   residual[ MassEqnID( Cell_ID, PhaseID::G ) ] -= Cprop[0].Den[PhaseID::G] * Qg_inj / dV;
-
-   // well bottom: sink
-   Cell_ID = TOTAL_CELL_NUM - 1;
-   const double Qg_prd = 5.0;
-   const double Qw_prd = 2.0;
-   residual[ MassEqnID( Cell_ID, PhaseID::L ) ] -= Cprop[0].Den[PhaseID::L] * Qw_prd / dV;
-   residual[ MassEqnID( Cell_ID, PhaseID::G ) ] -= Cprop[0].Den[PhaseID::G] * Qg_prd / dV; 
 }
 
 
@@ -585,9 +588,11 @@ Compute_DFlx_Resid()
    ADs c0( 0.0 ), vgj( 0.0 );
    ADs reG( 0.0 ), reL( 0.0 ), re( 0.0 );
    ADs L( 0.0 ), a1( 0.0 ), b1( 0.0 ), k0( 0.0 ), r( 0.0 );
-   ADS c1( 0.0 ), c2( 0.0 ), c3( 0.0 );
-   ADs c1x( 0.0 ), c5( 0.0 );
-   double c4, c7;
+   ADs c1( 0.0 ), c2( 0.0 ), c3( 0.0 );
+   ADs c1x( 0.0 ), c5( 0.0 ), c10( 0.0 );
+   ADs vsL( 0.0 ), vsG( 0.0 ), vs( 0.0 );
+   ADs gama( 0.0 ), jfrx( 0.0 );
+   double c4;
 
    int status;
    double cos_theta = std::cos( theta );
@@ -612,61 +617,61 @@ Compute_DFlx_Resid()
       else
 	 status = 2; // counter-current
 
-      reL = ReyNum( denL, VL, visL, D );
-      reG = ReyNum( denG, VG, visG, D );
+      reL = epri.ReyNum( denL, VL, visL, D );
+      reG = epri.ReyNum( denG, VG, visG, D );
 
       // < b1 > in all cases for convenience (avoid one more switch-statement)
       switch( status )
       {
 	 case 0:    // co-down
-	    L   = L_CD( HG );
-	    re  = Re_CD( reG );
-	    b1  = B1( re );
-	    c1x = C1x_CD();
+	    L   = epri.L_CD( HG );
+	    re  = epri.Re_CD( reG );
+	    b1  = epri.B1( re );
+	    c1x = epri.C1x_CD();
 	    break;
 
 	 case 1:    // co-up
-	    L   = L_CU( HG );
-	    re  = Re_CU( reG, reL );
-	    b1  = B1( re );
-	    c1x = C1x_CU( b1 );
+	    L   = epri.L_CU( HG );
+	    re  = epri.Re_CU( reG, reL );
+	    b1  = epri.B1( re );
+	    c1x = epri.C1x_CU( b1 );
 	    break;
 
 	 case 2:    // counter-current
-	    b1 = B1( re );
+	    b1 = epri.B1( re );
 	    break;
       }
 
-      k0 = K0( denG, denL, b1 );
-      r  = R(  denG, denL, b1 );
+      k0 = epri.K0( denG, denL, b1 );
+      r  = epri.R(  denG, denL, b1 );
 
-      c1 = C1( HG,   c1x );
-      c2 = C2( denG, denL );
-      c4 = C4( D );
+      c1 = epri.C1( HG,   c1x );
+      c2 = epri.C2( denG, denL );
+      c4 = epri.C4( D );
 
       vsL   = HL * VL;
       vsG   = HG * VG;
-      vs    = VsL + vsG;
+      vs    = vsL + vsG;
 
       // Note
       // compute < vgj > first because it's needed in < C0_CD >
       switch( status )
       {
 	 case 0:    // co-down
-	    jfrx  = Jfrx_CD();
-	    gamma = Gamma_CD( reG, reL, jfrx, D );
-	    c10   = C10( reL, gamma, jfrx,  D );
-	    c3    = c3_CD( reL, c10 );
+	    jfrx  = epri.Jfrx_CD();
+	    gama = epri.Gamma_CD( reG, reL, jfrx, D );
+	    c10   = epri.C10( reL, gama, jfrx,  D );
+	    c3    = epri.C3_CD( reL, c10 );
 	    //
-	    vgj = Vgj( denG, denL, c1, c2, c3, c4, D, g, surface_tension );
-	    c0  = C0_CD( L, k0, r, HG, vgj, c1, vsG, vsL );
+	    vgj = epri.Vgj( denG, denL, c1, c2, c3, c4, D, g, surface_tension );
+	    c0  = epri.C0_CD( L, k0, r, HG, vgj, c1, vsG, vsL );
 	    break;
 
 	 case 1:    // co-up
-	    c3  = C3_CU( reL );
+	    c3  = epri.C3_CU( reL );
 	    //
-	    vgj = Vgj( denG, denL, c1, c2, c3, c4, D, g, surface_tension );
-	    c0  = C0_CU( L, k0, r, HG );
+	    vgj = epri.Vgj( denG, denL, c1, c2, c3, c4, D, g, surface_tension );
+	    c0  = epri.C0_CU( L, k0, r, HG );
 	    break;
 
 	 case 2:    // counter-current
@@ -675,5 +680,50 @@ Compute_DFlx_Resid()
 
       int DFlx_ID = DFlxEqnID( f );
       residual[ DFlx_ID ] = Fstate[f].VG - c0*vs - vgj;
+   }
+}
+
+void Discretization::
+Setup_SS()
+{
+   ss.resize( 2 );
+   
+   // Top: source
+   ss[0].loc = 0;
+   ss[0].is_source = true;
+   ss[0].mode = SSMode::FixQ;
+   Q[ PhaseID::G ] = -1.0;
+   Q[ PhaseID::L ] = -1.0;
+   
+
+   // Bottom: sink
+   ss[1].loc = TOTAL_CELL_NUM - 1;
+   ss[1].is_source = false;
+   ss[1].mode = SSMode::FixQ;
+   Q[ PhaseID::G ] = 1.0;
+   Q[ PhaseID::L ] = 1.0;
+}
+
+void Discretization::
+Compute_SS()
+{
+   const double dV = 3.1415926 / 4.0 * D * D * dX;
+   for( int i = 0; i < ss.size(); ++i )
+   {
+      std::size_t loc = ss[i].loc;
+      
+      if( ss[i].mode = Mode::FixQ )
+      {
+	 ADs QL( 0.0 ), QG( 0.0 );
+	 QL = Cprop[loc].Den[PhaseID::L] * ss[i].Q[PhaseID::L] / dV;
+	 residual[ MassEqnID( loc, PhaseID::L ) ] -= QL;
+
+	 QG = Cprop[loc].Den[PhaseID::G] * ss[i].Q[PhaseID::G] / dV;
+	 residual[ MassEqnID( loc, PhaseID::G ) ] -= QG;
+      }
+      else // FixP
+      {
+	 // ... ...
+      }
    }
 }

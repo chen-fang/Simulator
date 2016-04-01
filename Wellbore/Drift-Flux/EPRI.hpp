@@ -69,11 +69,11 @@ struct EPRI
 
    ADs Gamma_CD( const ADs& ReG, const ADs& ReL, const ADs& Jfrx, double Dh );
 
-   ADs C10_1( const ADs& ReL, const ADs& gamma, double Dh );
+   ADs C10_1( const ADs& ReL, const ADs& gama, double Dh );
    ADs C10_2( const ADs& ReL, const ADs& Jfrx,  double Dh );
    ADs C10_3( const ADs& ReL, const ADs& Jfrx,  double Dh );
 
-   ADs C10( const ADs& ReL, const ADs& gamma, const ADs& Jfrx,  double Dh );
+   ADs C10( const ADs& ReL, const ADs& gama, const ADs& Jfrx,  double Dh );
 };
 
 
@@ -281,13 +281,13 @@ ADs EPRI::C3_CU( const ADs& ReL )
 }
 
 // Section: Vgj/
-ADs EPRI::C3_CD( const ADs& ReL, const ADs& C10 );
+ADs EPRI::C3_CD( const ADs& ReL, const ADs& C10 )
 {
    ADs b2( 0.0 );
    b2 = B2( ReL );
 
    ADs tmp( 0.0 );
-   tmp = 2.0 * pow( C10/2.0, B2 );
+   tmp = 2.0 * pow( C10/2.0, b2 );
 
    return Min( 10.0, tmp );
 }
@@ -350,10 +350,10 @@ ADs EPRI::Gamma_CD( const ADs& ReG, const ADs& ReL, const ADs& Jfrx, double Dh )
    return 0.0;
 }
 
-ADs EPRI::C10_1( const ADs& ReL, const ADs& gamma, double Dh )
+ADs EPRI::C10_1( const ADs& ReL, const ADs& gama, double Dh )
 {
    ADs tmp( 0.0 );
-   tmp = pow( (-ReL + gamma)/300000.0, 0.4 );
+   tmp = pow( (-ReL + gama)/300000.0, 0.4 );
    
    ADs ret( 0.0 );
    ret = 2.0 * exp( tmp );
@@ -379,10 +379,10 @@ ADs EPRI::C10_3( const ADs& ReL, const ADs& Jfrx, double Dh )
    return ret;
 }
 
-ADs EPRI::C10( const ADs& ReL, const ADs& gamma, const ADs& Jfrx,  double Dh )
+ADs EPRI::C10( const ADs& ReL, const ADs& gama, const ADs& Jfrx,  double Dh )
 {
    ADs c10_1( 0.0 ), c10_2( 0.0 ), c10_3( 0.0 );
-   c10_1 = C10_1( ReL, gamma, Dh );
+   c10_1 = C10_1( ReL, gama, Dh );
    c10_2 = C10_2( ReL, Jfrx,  Dh );
    c10_3 = C10_3( ReL, Jfrx,  Dh );
 
