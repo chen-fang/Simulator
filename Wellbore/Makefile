@@ -1,7 +1,7 @@
 CFLAGS= -Wall -g -O -std=c++11
-INC_ADETL= -I/Users/BlackIce/Documents/Library/ADETL
+#INC_ADETL= -I/Users/BlackIce/Documents/Library/ADETL
 
-#INC_ADETL= -I/home/blackicefc/Documents/Library/ADETL
+INC_ADETL= -I/home/blackicefc/Documents/Library/ADETL
 SRC= *.cpp 
 
 all:

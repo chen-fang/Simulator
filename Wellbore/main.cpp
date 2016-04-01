@@ -1,5 +1,5 @@
-#include "FluidProperty.hpp"
-#include "Discretization.hpp"
+#include "PropertyCalculator.hpp"
+#include "DiscreteProblem.hpp"
 
 int main()
 {
