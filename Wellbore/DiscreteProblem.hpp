@@ -287,6 +287,8 @@ discretize( const StateVector& state, double dT )
 bool DiscreteProblem::
 is_converged( ConvergenceInfo& nrm )
 {
+   nrm.MatBal[0] = 0.0;
+   nrm.MatBal[1] = 0.0;
    bool is_MATBAL_converged = true;
    bool is_NRMSAT_converged = true;
 
@@ -362,7 +364,7 @@ extract_R_J( V&r, M& m, std::size_t offset )
    m.check_size();
    if( r.size() != residual.size() )
       std::cout << "BUG IN JACOBIAN\t ZERO ROW FOUND" << r.size() <<"!="<< residual.size() << std::endl;
-   m.ainfo.elliptic_varr_id = 0;
+   m.ainfo.elliptic_var_id = 0;
    m.ainfo.n_vars_per_block = 4;
    m.ainfo.tile_offset      = 0;
    m.ainfo.n_blocks         = TOTAL_CELL_NUM; // I doubt it
@@ -774,4 +776,17 @@ Compute_SS()
 	 // ... ...
       }
    }
+}
+
+
+
+std::ostream & operator << ( std::ostream & ostr,
+                             const DiscreteProblem::ConvergenceInfo & _out )
+{
+   ostr << _out.NormSat[0]  << "\t"
+        << _out.NormSat[1]  << "\t"
+        << _out.MatBal[0]  << "\t"
+        << _out.MatBal[1]  << std::endl;
+
+   return ostr;
 }
