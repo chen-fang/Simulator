@@ -47,8 +47,8 @@ int main ( )
 
    const int PHASE_NUM = 2;
    const int TOTAL_CELL_NUM = 2;
-   const int dX = 1.0;
-   const int D  = 0.5;
+   const double dX = 1.0;
+   const double D  = 0.5;
    const double theta = 180;
 
    
@@ -57,6 +57,7 @@ int main ( )
    LINEARSOLVER lnsolver( model.max_num_eqns(), 
 			  model.max_num_nnz() );
 
+   std::cout << "MAX = " << model.max_num_eqns() << std::endl;
 
    STDN newton( model, MAX_NLNITER, 1);
 

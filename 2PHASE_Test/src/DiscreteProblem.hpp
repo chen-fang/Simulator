@@ -39,6 +39,7 @@ public:
    typedef struct
    {
       ADs Den[2]; // CellProp_PropCal
+      ADs Vis[2];
       ADs DenM;   // CellProp_PropCal
       ADs VelM;   // CellProp_Upwind
    }                                         CellProps;
@@ -84,8 +85,8 @@ public:
    const int PHASE_NUM;
    const int TOTAL_CELL_NUM;
    const int TOTAL_FACE_NUM;
-   const int dX;
-   const int D;
+   const double dX;
+   const double D;
    const double g;
    const double surface_tension;
    const double theta;
@@ -119,7 +120,8 @@ public:
    EPRI epri;
 
 public:
-   DiscreteProblem( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _dX, int _D, double _theta );
+   DiscreteProblem( int _PHASE_NUM, int _TOTAL_CELL_NUM,
+		    double _dX, double _D, double _theta );
 
    // Node and face indices
    // '|' indicates CV face
@@ -136,8 +138,8 @@ public:
    int Get_LF_Index( int cell_index )   { return cell_index - 1; }
    int Get_RF_Index( int cell_index )   { return cell_index;   }
 
-   std::size_t max_num_eqns() const     { return PHASE_NUM * ( TOTAL_CELL_NUM + TOTAL_CELL_NUM ); }
-   std::size_t max_num_nnz()  const     { return 44 * max_num_eqns() - 28; }
+   std::size_t max_num_eqns() const     { return PHASE_NUM * ( TOTAL_CELL_NUM + TOTAL_FACE_NUM ); }
+  std::size_t max_num_nnz()  const     { return 30; } //44 * max_num_eqns() - 28; }
 
    int MassEqnID( int c, int phaseID )  { return 4 * c + phaseID; }
    int MomtEqnID( int f )               { return 4 * f + 2; }
@@ -183,7 +185,8 @@ public:
    void Compute_SS();
 };
 
-DiscreteProblem::DiscreteProblem( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _DX, int _D, double _theta ) :
+DiscreteProblem::DiscreteProblem( int _PHASE_NUM, int _TOTAL_CELL_NUM,
+				  double _DX, double _D, double _theta ) :
    PHASE_NUM( _PHASE_NUM ),
    TOTAL_CELL_NUM( _TOTAL_CELL_NUM ),
    TOTAL_FACE_NUM( _TOTAL_CELL_NUM - 1 ),
@@ -238,12 +241,12 @@ initialize_state( StateVector& state )
       state[c].P  = 101.325E+03; // Pa
       //
       state[c].HG.make_independent( MassEqnID(c,PhaseID::L) );
-      //state[c].P.make_independent(  MassEqnID(c,PhaseID::G) );
+      state[c].P.make_independent(  MassEqnID(c,PhaseID::G) );
    }
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
-      state[f].VL = 0.0;
-      state[f].VG = 0.0;
+     state[f].VL = 0.2;
+      state[f].VG = 0.3;
       //
       state[f].VL.make_independent( MomtEqnID(f) );
       state[f].VG.make_independent( DFlxEqnID(f) );
@@ -274,9 +277,44 @@ discretize( const StateVector& state, double dT )
    bool is_badvalue = false;
    Transfer_StateVector( state );
    Compute_Properties();
+
+   std::cout << Cprop[0].Den[PhaseID::L] << std::endl;
+   std::cout << Cprop[0].Den[PhaseID::G] << std::endl;
+   std::cout << Cprop[0].DenM << std::endl;
+   std::cout << Cprop[0].VelM << std::endl;
+   std::cout << Cprop[1].VelM << std::endl;
+   std::cout << std::endl;
+
+   std::cout << Fprop[0].H_[PhaseID::L] << std::endl;
+   std::cout << Fprop[0].H_[PhaseID::G] << std::endl;
+   std::cout << Fprop[0].Den_[PhaseID::L] << std::endl;
+   std::cout << Fprop[0].Den_[PhaseID::G] << std::endl;
+   std::cout << Fprop[0].Vis_[PhaseID::L] << std::endl;
+   std::cout << Fprop[0].Vis_[PhaseID::G] << std::endl;
+   std::cout << Fprop[0].H_Den_[PhaseID::L] << std::endl;
+   std::cout << Fprop[0].H_Den_[PhaseID::G] << std::endl;
+   std::cout << Fprop[0].H_Vis_[PhaseID::L] << std::endl;
+   std::cout << Fprop[0].H_Vis_[PhaseID::G] << std::endl;
+
+   std::cout << Fprop[0].DenM_ << std::endl;
+   std::cout << Fprop[0].VisM_ << std::endl;
+   std::cout << Fprop[0].VelM_ << std::endl;
+   std::cout << std::endl;
+
    Compute_Mass_Resid( dT );
    Compute_SS();
+
+   /*
+   std::cout << residual[0] << std::endl;
+   std::cout << residual[1] << std::endl;
+   std::cout << residual[4] << std::endl;
+   std::cout << residual[5] << std::endl;
+   */
+
    Compute_Momt_Resid( dT );
+   std::cout << residual[2] << std::endl;
+   std::cout << residual[3] << std::endl;
+
    Compute_DFlx_Resid();
 
    std::size_t eqn_massL, eqn_massG;
@@ -383,6 +421,16 @@ extract_R_J( V&r, M& m, std::size_t offset )
    m.ainfo.tile_offset      = 0;
    m.ainfo.n_blocks         = TOTAL_CELL_NUM; // I doubt it
    m.ainfo.n_unblocked_vars = 0;
+
+   /*
+   for( std::size_t i = 0; i < residual.size(); ++i )
+     std::cout << residual[i].value() << std::endl;
+
+   for( std::size_t i = 0; i < residual.size(); ++i )
+     std::cout << residual[i] << std::endl;
+   std::cout << std::endl;
+   std::cout << m << std::endl;
+   */
 }
 
 
@@ -398,6 +446,8 @@ Compute_CellProp_PropCacl()
    {
       Cprop[c].Den[PhaseID::L] = PropCalc.Density_Wat( Cstate[c].P );
       Cprop[c].Den[PhaseID::G] = PropCalc.Density_Air( Cstate[c].P, 25.0 );
+      Cprop[c].Vis[PhaseID::L] = PropCalc.Viscosity_Wat();
+      Cprop[c].Vis[PhaseID::G] = PropCalc.Viscosity_Air();
       Cprop[c].DenM = PropCalc.Density_Mix( (1.0-Cstate[c].HG) * Cprop[c].Den[PhaseID::L],
 					    Cstate[c].HG * Cprop[c].Den[PhaseID::G] );
    }
@@ -422,8 +472,9 @@ Compute_FaceProp_Upwind()
       HL = 1.0 - Cstate[C].HG;
       Fprop[f].H_[PhaseID::L]     = HL;
       Fprop[f].Den_[PhaseID::L]   = Cprop[C].Den[PhaseID::L];
-      Fprop[f].Vis_[PhaseID::L]   = PropCalc.Viscosity_Wat();
+      Fprop[f].Vis_[PhaseID::L]   = Cprop[C].Vis[PhaseID::L];
       Fprop[f].H_Den_[PhaseID::L] = HL * Cprop[C].Den[PhaseID::L];
+      Fprop[f].H_Vis_[PhaseID::L] = HL * Cprop[C].Vis[PhaseID::L];
 
       // gas
       if( Fstate[f].VG.value() >= 0.0 )   C = LC;
@@ -431,8 +482,9 @@ Compute_FaceProp_Upwind()
       HG = Cstate[C].HG;
       Fprop[f].H_[PhaseID::G]     = HG;
       Fprop[f].Den_[PhaseID::G]   = Cprop[C].Den[PhaseID::G];
-      Fprop[f].Vis_[PhaseID::L]   = PropCalc.Viscosity_Wat();
+      Fprop[f].Vis_[PhaseID::G]   = Cprop[C].Vis[PhaseID::G];
       Fprop[f].H_Den_[PhaseID::G] = HG * Cprop[C].Den[PhaseID::G];
+      Fprop[f].H_Vis_[PhaseID::G] = HG * Cprop[C].Vis[PhaseID::G];
 
       // mixture: DenM_, VelM_
       Fprop[f].DenM_ = PropCalc.Density_Mix(   Fprop[f].H_Den_[PhaseID::L],
@@ -554,7 +606,18 @@ Compute_Mass_Resid( double dT )
       MassG_ID = MassEqnID( c, PhaseID::G );
       
       residual[ MassL_ID ] = ( mass_accumL[c] - mass_accumL_old[c] ) / dT + mass_transL[c];
-      residual[ MassG_ID ] = ( mass_accumL[c] - mass_accumG_old[c] ) / dT + mass_transG[c];
+      residual[ MassG_ID ] = ( mass_accumG[c] - mass_accumG_old[c] ) / dT + mass_transG[c];
+
+      /*
+      std::cout << std::endl
+		<< "Cell#" << c << "  |  MassL_ID = " << MassL_ID << "  |  MassL_ID = " << MassL_ID
+		<< std::endl << std::endl
+		<< mass_accumL[c] << std::endl
+		<< mass_accumL_old[c] << std::endl 
+		<< mass_transL[c] << std::endl
+		<< residual[ MassL_ID ] << std::endl
+		<< std::endl;
+      */
    }
 
 
@@ -639,8 +702,20 @@ Compute_Momt_Resid( double dT )
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
       int Momt_ID = MomtEqnID( f );
-      residual[ Momt_ID ] = (momt_accum[f] - momt_accum[f])/dT + momt_trans[f] + momt_press[f]
+      residual[ Momt_ID ] = (momt_accum[f] - momt_accum_old[f])/dT + momt_trans[f] + momt_press[f]
 	 + momt_frict[f] - momt_gravt[f];
+
+      /*
+      std::cout << "Face# " << f << "  |  Momt_ID = " << Momt_ID << std::endl
+		<< std::endl
+		<< momt_accum[f] << std::endl
+		<< momt_accum_old[f] << std::endl
+		<< momt_trans[f] << std::endl
+		<< momt_press[f] << std::endl
+		<< momt_frict[f] << std::endl
+		<< momt_gravt[f] << std::endl
+		<< std::endl << std::endl;
+      */
    }
 }
 
@@ -744,6 +819,16 @@ Compute_DFlx_Resid()
 
       int DFlx_ID = DFlxEqnID( f );
       residual[ DFlx_ID ] = Fstate[f].VG - c0*vs - vgj;
+      /*
+      std::cout << "Face# " << f << "  |  DFlx_ID = " << DFlx_ID << std::endl
+		<< std::endl
+		<< c0 << std::endl
+		<< vgj << std::endl
+		<< vs << std::endl
+		<< std::endl
+		<< residual[ DFlx_ID ] << std::endl
+		<< std::endl;
+      */
    }
 }
 
