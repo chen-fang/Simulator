@@ -10,10 +10,7 @@
 #include "Nonlinear/NewtonSolver.hpp"
 
 //typedef GENSOL::Intel_Pardiso                         LINEARSOLVER;
-// typedef GENSOL::Intel_Prec_GMRES< GENSOL::Intel_ILU0 >  LINEARSOLVER;
-typedef GENSOL::TwoStageCombinative< > PRECONDITIONER;
-typedef GENSOL::R_Precond_Solver< GENSOL::DRS_Precond_Solver< GENSOL::Intel_Prec_GMRES< PRECONDITIONER  > > >  LINEARSOLVER;
-
+typedef GENSOL::Intel_Prec_GMRES< GENSOL::Intel_ILU0 >  LINEARSOLVER;
 typedef GENSOL::NewtonSolver< DiscreteProblem, LINEARSOLVER > STDN;
 
 #include "fastl/containers/pod_vector_unbounded.hpp"
