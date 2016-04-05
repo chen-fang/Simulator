@@ -245,7 +245,7 @@ initialize_state( StateVector& state )
    }
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
-     state[f].VL = 0.2;
+     state[f].VL = -0.2;
       state[f].VG = 0.3;
       //
       state[f].VL.make_independent( MomtEqnID(f) );
@@ -277,7 +277,7 @@ discretize( const StateVector& state, double dT )
    bool is_badvalue = false;
    Transfer_StateVector( state );
    Compute_Properties();
-
+   /*
    std::cout << Cprop[0].Den[PhaseID::L] << std::endl;
    std::cout << Cprop[0].Den[PhaseID::G] << std::endl;
    std::cout << Cprop[0].DenM << std::endl;
@@ -300,22 +300,21 @@ discretize( const StateVector& state, double dT )
    std::cout << Fprop[0].VisM_ << std::endl;
    std::cout << Fprop[0].VelM_ << std::endl;
    std::cout << std::endl;
+   */
 
    Compute_Mass_Resid( dT );
    Compute_SS();
+   Compute_Momt_Resid( dT );
+   Compute_DFlx_Resid();
 
-   /*
    std::cout << residual[0] << std::endl;
    std::cout << residual[1] << std::endl;
-   std::cout << residual[4] << std::endl;
-   std::cout << residual[5] << std::endl;
-   */
-
-   Compute_Momt_Resid( dT );
    std::cout << residual[2] << std::endl;
    std::cout << residual[3] << std::endl;
+   std::cout << residual[4] << std::endl;
+   std::cout << residual[5] << std::endl;
+   std::cout << std::endl;
 
-   Compute_DFlx_Resid();
 
    std::size_t eqn_massL, eqn_massG;
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
@@ -726,9 +725,9 @@ Compute_DFlx_Resid()
 
    ADs c0( 0.0 ), vgj( 0.0 );
    ADs reG( 0.0 ), reL( 0.0 ), re( 0.0 );
-   ADs L( 0.0 ), a1( 0.0 ), b1( 0.0 ), k0( 0.0 ), r( 0.0 );
+   ADs L( 0.0 ), b1( 0.0 ), k0( 0.0 ), r( 0.0 );
    ADs c1( 0.0 ), c2( 0.0 ), c3( 0.0 );
-   ADs c1x( 0.0 ), c5( 0.0 ), c10( 0.0 );
+   ADs c1x( 0.0 ), c10( 0.0 );
    ADs vsL( 0.0 ), vsG( 0.0 ), vs( 0.0 );
    ADs gama( 0.0 ), jfrx( 0.0 );
    double c4;
@@ -749,12 +748,14 @@ Compute_DFlx_Resid()
       const ADs& visL = Fprop[f].Vis_[ PhaseID::L ];
       const ADs& visG = Fprop[f].Vis_[ PhaseID::G ];
 
-      if( cos_theta * VL.value() >= 0.0 && cos_theta * VG.value() >= 0.0 )
+      if( VL.value() <= 0.0 && VG.value() < 0.0 )
 	 status = 0; // co-down
-      else if( cos_theta * VL.value() < 0.0 && cos_theta * VG.value() < 0.0 )
+      else if( VL.value() >= 0.0 && VG.value() >= 0.0 )
 	 status = 1; // co-up
       else
 	 status = 2; // counter-current
+
+      // std::cout << "status = " << status << std::endl;
 
       reL = epri.ReyNum( denL, VL, visL, D );
       reG = epri.ReyNum( denG, VG, visG, D );
@@ -821,10 +822,14 @@ Compute_DFlx_Resid()
       residual[ DFlx_ID ] = Fstate[f].VG - c0*vs - vgj;
       /*
       std::cout << "Face# " << f << "  |  DFlx_ID = " << DFlx_ID << std::endl
-		<< std::endl
+		<< "--------------------" << std::endl
+		<< L << std::endl
+		<< re << std::endl
+		<< b1 << std::endl
+		<< k0 << std::endl
+		<< r << std::endl
 		<< c0 << std::endl
 		<< vgj << std::endl
-		<< vs << std::endl
 		<< std::endl
 		<< residual[ DFlx_ID ] << std::endl
 		<< std::endl;

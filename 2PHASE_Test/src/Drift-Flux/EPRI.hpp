@@ -104,7 +104,10 @@ ADs EPRI::L_CU( const ADs& Hg )
    ADs tmp( 0.0 );
    tmp = 1.15 * pow( Hg, 0.45 );
 
-   return Min( 1.0, tmp );
+   if( tmp.value() >= 1.0 )
+     tmp = 1.0;
+
+   return tmp;
 }
 
 // Section: C0/
@@ -112,8 +115,11 @@ ADs EPRI::L_CD( const ADs& Hg )
 {
    ADs tmp( 0.0 );
    tmp = 1.05 * pow( Hg, 0.25 );
-   
-   return Min( 1.0, tmp );
+
+   if( tmp.value() >= 1.0 )
+     tmp = 1.0;
+
+   return tmp;   
 }
 
 // Section: C0/
@@ -241,6 +247,7 @@ ADs EPRI::C2( const ADs& denG, const ADs& denL )
 
    ADs ret( 0.0 );
    double ratio = denL.value() / denG.value();
+
    if( ratio <= 18.0 )
    {
       ADs ratio_ADs( 0.0 );
