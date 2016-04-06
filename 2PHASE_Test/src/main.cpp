@@ -9,8 +9,8 @@
 #include "Linear/TwoStageCombinative.hpp"
 #include "Nonlinear/NewtonSolver.hpp"
 
-//typedef GENSOL::Intel_Pardiso                         LINEARSOLVER;
-typedef GENSOL::Intel_Prec_GMRES< GENSOL::Intel_ILU0 >  LINEARSOLVER;
+typedef GENSOL::Intel_Pardiso                         LINEARSOLVER;
+//typedef GENSOL::Intel_Prec_GMRES< GENSOL::Intel_ILU0 >  LINEARSOLVER;
 typedef GENSOL::NewtonSolver< DiscreteProblem, LINEARSOLVER > STDN;
 
 #include "fastl/containers/pod_vector_unbounded.hpp"
@@ -37,7 +37,7 @@ int main ( )
    const double      DT_CUT      = 0.5;
    const double      DT_GROW     = 1.0;
    const double      DT_MAX      = 35.0;
-   const double      T_FINAL     = 365.0;
+   const double      T_FINAL     = 5.0;
    
    
    const double OPT_NLNITER = ( 3 < MAX_NLNITER ? MAX_NLNITER : 3 );
@@ -54,26 +54,22 @@ int main ( )
    LINEARSOLVER lnsolver( model.max_num_eqns(), 
 			  model.max_num_nnz() );
 
-   std::cout << "MAX = " << model.max_num_eqns() << std::endl;
-
    STDN newton( model, MAX_NLNITER, 1);
 
    DiscreteProblem::StateVector uOld, uNew;
    model.initialize_state( uOld );
-
    //   std::cout << uOld << std::endl;
 
 
    double DT   = DT_INIT;
    double time = 0.0;
-   //   while ( time < T_FINAL )
-   //   {
+   while ( time < T_FINAL )
+     {
       uNew = uOld;
       // std::cout << uNew << std::endl;
       
       STDN::report_t stdsmry = newton.solve_timestep( uNew, uOld, DT, model, lnsolver );
 
-      /*
       if ( stdsmry.is_converged )
       {
          uOld =  uNew;
@@ -88,9 +84,9 @@ int main ( )
          DT *= DT_CUT;
          std::cout << "FAILED " << std::endl;
       }
-      //   }
+     }
    dump_solution( "./output/results.out", uNew );
 
-   */
+
    return -1;
 }

@@ -183,6 +183,17 @@ public:
    // Source & Sink
    void Setup_SS();
    void Compute_SS();
+
+  // for debugging
+  void print_state( const StateVector& state )
+  {
+    for( int i = 0; i < TOTAL_FACE_NUM; ++i )
+      printf( "%12.3f | %12.3f | %12.3f | %12.3f | ",
+	      state[i].HG.value(), state[i].P.value(), state[i].VL.value(), state[i].VG.value() );
+    int i = TOTAL_CELL_NUM-1;
+    printf( "%12.3f | %12.3f |\n", state[i].HG.value(), state[i].P.value() );
+  }
+  
 };
 
 DiscreteProblem::DiscreteProblem( int _PHASE_NUM, int _TOTAL_CELL_NUM,
@@ -245,8 +256,8 @@ initialize_state( StateVector& state )
    }
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
-     state[f].VL = -0.2;
-      state[f].VG = 0.3;
+     state[f].VL = -0.1;
+     state[f].VG = -0.1;
       //
       state[f].VL.make_independent( MomtEqnID(f) );
       state[f].VG.make_independent( DFlxEqnID(f) );
@@ -307,6 +318,7 @@ discretize( const StateVector& state, double dT )
    Compute_Momt_Resid( dT );
    Compute_DFlx_Resid();
 
+   /*
    std::cout << residual[0] << std::endl;
    std::cout << residual[1] << std::endl;
    std::cout << residual[2] << std::endl;
@@ -314,7 +326,7 @@ discretize( const StateVector& state, double dT )
    std::cout << residual[4] << std::endl;
    std::cout << residual[5] << std::endl;
    std::cout << std::endl;
-
+   */
 
    std::size_t eqn_massL, eqn_massG;
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
@@ -391,8 +403,15 @@ update_state( StateVector& state, const R& update, bool do_safeguard )
       eqn_massL = MassEqnID( c, PhaseID::L );
       eqn_massG = MassEqnID( c, PhaseID::G );
 
-      state[c].HG += update[ eqn_massL ];
+      double update_HG = update[ eqn_massL ];
+      if( update[ eqn_massL ] >  0.1 )   update_HG =  0.1;
+      if( update[ eqn_massL ] < -0.1 )   update_HG = -0.1;
+
+      state[c].HG += update_HG;
       state[c].P  += update[ eqn_massG ];
+
+      if( state[c].HG.value() > 1.0 )   state[c].HG.value() = 1.0;
+      if( state[c].HG.value() < 0.0 )   state[c].HG.value() = 0.0;
    }
    std::size_t eqn_momt, eqn_dflx;
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
