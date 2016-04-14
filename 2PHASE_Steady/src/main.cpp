@@ -37,7 +37,7 @@ int main ( )
    const double      DT_CUT      = 0.5;
    const double      DT_GROW     = 1.0;
    const double      DT_MAX      = 35.0;
-   const double      T_FINAL     = 5.0;
+   const double      T_FINAL     = 10.0;
    
    
    const double OPT_NLNITER = ( 3 < MAX_NLNITER ? MAX_NLNITER : 3 );
@@ -63,10 +63,13 @@ int main ( )
 
    double DT   = DT_INIT;
    double time = 0.0;
+
    while ( time < T_FINAL )
      {
       uNew = uOld;
       // std::cout << uNew << std::endl;
+
+
       
       STDN::report_t stdsmry = newton.solve_timestep( uNew, uOld, DT, model, lnsolver );
 

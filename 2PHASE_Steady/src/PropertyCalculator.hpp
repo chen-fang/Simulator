@@ -185,7 +185,9 @@ public:
    /** Frictional Factor **///--------------------------------------------------------
    ADs Fanning_Friction_Factor( const ADs& Re )
    {
-      // Use together with SI units
+      if( 0.0 == Re.value() )
+	return 0.0;
+
       ADs ret( 0.0 );
       if( Re.value() <= 2100.0 )
       {
@@ -199,7 +201,9 @@ public:
    }
    ADs Moody_Friction_Factor( const ADs& Re )
    {
-      // Use together with Field units
+      if( 0.0 == Re.value() )
+	return 0.0;
+
       ADs ret( 0.0 );
       ret = 4.0 * Fanning_Friction_Factor( Re );
       return ret;

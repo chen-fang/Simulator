@@ -65,14 +65,14 @@ public:
       double NormSat[2];
    }                                        ConvergenceInfo;
 
-   enum SSMode{ FixQ=0, FixP=1 };
+   enum SSMode{ FixQp=0, FixQt=1 };
    typedef struct
    {
       std::size_t loc;
       bool        is_source;
       int         mode;       // [0]-const rate / [1]-pressure
       double      Q[2];       // for: const rate
-      double      P;          // for: const pressure
+      double      Qt;         // for: const total rate
    }                                        SS;
       
 //private:
@@ -193,7 +193,6 @@ public:
     int i = TOTAL_CELL_NUM-1;
     printf( "%12.3f | %12.3f |\n", state[i].HG.value(), state[i].P.value() );
   }
-  
 };
 
 DiscreteProblem::DiscreteProblem( int _PHASE_NUM, int _TOTAL_CELL_NUM,
@@ -246,18 +245,24 @@ void DiscreteProblem::
 initialize_state( StateVector& state )
 {
    state.resize( TOTAL_CELL_NUM );
+
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
    {
-      state[c].HG = 0.4;
+     state[c].HG = 0.1;
       state[c].P  = 101.325E+03; // Pa
       //
       state[c].HG.make_independent( MassEqnID(c,PhaseID::L) );
       state[c].P.make_independent(  MassEqnID(c,PhaseID::G) );
    }
+      
+   //
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
-     state[f].VL = -0.1;
-     state[f].VG = -0.1;
+      // Note:
+      // velocities should NOT be initialized to 0.
+      // when using EPRI-DF model ('DIV/0' is possible when calculating C0)
+      state[f].VL = -0.01;
+      state[f].VG = -0.01;
       //
       state[f].VL.make_independent( MomtEqnID(f) );
       state[f].VG.make_independent( DFlxEqnID(f) );
@@ -397,6 +402,19 @@ template< typename R >
 void DiscreteProblem::
 update_state( StateVector& state, const R& update, bool do_safeguard )
 {
+   // print state
+   for( int i = 0; i < TOTAL_FACE_NUM; ++i )
+     printf( "%12.3f | %12.3f | %12.3f | %12.3f | ",
+	     state[i].HG.value(), state[i].P.value(), state[i].VL.value(), state[i].VG.value() );
+   int i = TOTAL_CELL_NUM-1;
+   printf( "%12.3f | %12.3f |\n", state[i].HG.value(), state[i].P.value() );
+   // print update
+   for (std::size_t i=0; i<update.size(); ++i )
+     {
+       printf( "%12.3f | ", update[i] );
+     }
+   printf("\n\n");
+
    std::size_t eqn_massL, eqn_massG;
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
    {
@@ -861,20 +879,18 @@ Setup_SS()
 {
    ss.resize( 2 );
    
-   // Top: source
+   // Well-Bottom: sink
    ss[0].loc             = 0;
-   ss[0].is_source       = true;
-   ss[0].mode            = SSMode::FixQ;
-   ss[0].Q[ PhaseID::G ] = -1.0;
-   ss[0].Q[ PhaseID::L ] = -1.0;
-   
+   ss[0].is_source       = false;
+   ss[0].mode            = SSMode::FixQt;
+   ss[0].Qt              = 0.1;
 
-   // Bottom: sink
+   // Well-Top: source
    ss[1].loc             = TOTAL_CELL_NUM - 1;
-   ss[1].is_source       = false;
-   ss[1].mode            = SSMode::FixQ;
-   ss[1].Q[ PhaseID::G ] = 1.0;
-   ss[1].Q[ PhaseID::L ] = 1.0;
+   ss[1].is_source       = true;
+   ss[1].mode            = SSMode::FixQp;
+   ss[1].Q[ PhaseID::G ] = -0.1;
+   ss[1].Q[ PhaseID::L ] = -0.0;;
 }
 
 void DiscreteProblem::
@@ -884,20 +900,24 @@ Compute_SS()
    for( std::size_t i = 0; i < ss.size(); ++i )
    {
       std::size_t loc = ss[i].loc;
+      ADs QL( 0.0 ), QG( 0.0 );
       
-      if( ss[i].mode == SSMode::FixQ )
+      if( ss[i].mode == SSMode::FixQp )
       {
-	 ADs QL( 0.0 ), QG( 0.0 );
 	 QL = Cprop[loc].Den[PhaseID::L] * ss[i].Q[PhaseID::L] / dV;
-	 residual[ MassEqnID( loc, PhaseID::L ) ] -= QL;
-
 	 QG = Cprop[loc].Den[PhaseID::G] * ss[i].Q[PhaseID::G] / dV;
-	 residual[ MassEqnID( loc, PhaseID::G ) ] -= QG;
+
       }
-      else // FixP
+      else // FixQt
       {
-	 // ... ...
+	 const ADs& HG = Cstate[loc].HG;
+	 
+	 QL = Cprop[loc].Den[PhaseID::L] * ss[i].Qt * (1.0-HG) / dV;
+	 QG = Cprop[loc].Den[PhaseID::G] * ss[i].Qt *      HG / dV;
       }
+      //
+      residual[ MassEqnID( loc, PhaseID::L ) ] += QL;
+      residual[ MassEqnID( loc, PhaseID::G ) ] += QG;	
    }
 }
 
