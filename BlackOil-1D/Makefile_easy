@@ -1,0 +1,10 @@
+INC_ADETL= -I/Users/BlackIce/Documents/Library/ADETL
+
+CFLAGS= -O3 -std=c++11
+SRC= *.cpp 
+
+all:
+	g++  $(INC_ADETL) $(CFALGS) $(SRC) -o ./run
+
+clean:
+	rm -rf ./run ./*~

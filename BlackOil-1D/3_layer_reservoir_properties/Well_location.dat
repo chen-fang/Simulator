@@ -1,0 +1,22 @@
+Reservoir Dimension 20x30x1
+
+Well locations
+WELL1 - Injector 1                    
+    7   7    3 
+
+WELL2 - Injector 2       
+     18   27    3  
+
+WELL3 - Producer 1                          
+    6    4    1
+
+WELL4 - Producer 2                         
+    17     6    1 
+
+WELL5 - Producer 3                         
+    7   24    1
+
+WELL6 - Producer 4                      
+     6   22    1
+ WELL7 - Producer 5                      
+     4   12    1    
