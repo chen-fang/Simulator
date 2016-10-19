@@ -1,12 +1,15 @@
 #pragma once
 #include <vector>
+
+#include "PropertyCalculator.hpp"
 #include "Drift-Flux/EPRI.hpp"
 
 typedef std::vector<double> Vec;
 
-class Discretization
+class DiscreteProblem
 {
-private:
+//private:
+public:
    enum PhaseID { L=0, G=1 };
 
    typedef struct
@@ -36,6 +39,7 @@ private:
    typedef struct
    {
       ADs Den[2]; // CellProp_PropCal
+      ADs Vis[2];
       ADs DenM;   // CellProp_PropCal
       ADs VelM;   // CellProp_Upwind
    }                                         CellProps;
@@ -61,14 +65,14 @@ private:
       double NormSat[2];
    }                                        ConvergenceInfo;
 
-   enum SSMode{ FixQ=0, FixP=1 };
+   enum SSMode{ FixQp=0, FixQt=1 };
    typedef struct
    {
       std::size_t loc;
       bool        is_source;
       int         mode;       // [0]-const rate / [1]-pressure
       double      Q[2];       // for: const rate
-      double      P;          // for: const pressure
+      double      Qt;         // for: const total rate
    }                                        SS;
       
 //private:
@@ -81,8 +85,8 @@ public:
    const int PHASE_NUM;
    const int TOTAL_CELL_NUM;
    const int TOTAL_FACE_NUM;
-   const int dX;
-   const int D;
+   const double dX;
+   const double D;
    const double g;
    const double surface_tension;
    const double theta;
@@ -116,7 +120,8 @@ public:
    EPRI epri;
 
 public:
-   Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _dX, int _D, double _theta );
+   DiscreteProblem( int _PHASE_NUM, int _TOTAL_CELL_NUM,
+		    double _dX, double _D, double _theta );
 
    // Node and face indices
    // '|' indicates CV face
@@ -133,17 +138,18 @@ public:
    int Get_LF_Index( int cell_index )   { return cell_index - 1; }
    int Get_RF_Index( int cell_index )   { return cell_index;   }
 
-   std::size_t max_num_eqns() const     { return PHASE_NUM * ( TOTAL_CELL_NUM + TOTAL_CELL_NUM ); }
-   std::size_t max_num_nnz()  const     { return 44 * max_num_eqns() - 28; }
+   std::size_t max_num_eqns() const     { return PHASE_NUM * ( TOTAL_CELL_NUM + TOTAL_FACE_NUM ); }
+  std::size_t max_num_nnz()  const     { return 30; } //44 * max_num_eqns() - 28; }
 
    int MassEqnID( int c, int phaseID )  { return 4 * c + phaseID; }
    int MomtEqnID( int f )               { return 4 * f + 2; }
    int DFlxEqnID( int f )               { return 4 * f + 3; }
 
    void Transfer_StateVector( const StateVector& state );
-   void initiate_state( StateVector& state );
+   void initialize_state( StateVector& state );
    void bind_to_old_state( const StateVector& old_state );
    bool discretize( const StateVector& state, double dT );
+   bool is_converged( ConvergenceInfo& nrm );
 
    template< typename R >
    void update_state( StateVector& state, const R& update, bool do_safeguard );
@@ -177,9 +183,20 @@ public:
    // Source & Sink
    void Setup_SS();
    void Compute_SS();
+
+  // for debugging
+  void print_state( const StateVector& state )
+  {
+    for( int i = 0; i < TOTAL_FACE_NUM; ++i )
+      printf( "%12.3f | %12.3f | %12.3f | %12.3f | ",
+	      state[i].HG.value(), state[i].P.value(), state[i].VL.value(), state[i].VG.value() );
+    int i = TOTAL_CELL_NUM-1;
+    printf( "%12.3f | %12.3f |\n", state[i].HG.value(), state[i].P.value() );
+  }
 };
 
-Discretization::Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _DX, int _D, double _theta ) :
+DiscreteProblem::DiscreteProblem( int _PHASE_NUM, int _TOTAL_CELL_NUM,
+				  double _DX, double _D, double _theta ) :
    PHASE_NUM( _PHASE_NUM ),
    TOTAL_CELL_NUM( _TOTAL_CELL_NUM ),
    TOTAL_FACE_NUM( _TOTAL_CELL_NUM - 1 ),
@@ -191,12 +208,25 @@ Discretization::Discretization( int _PHASE_NUM, int _TOTAL_CELL_NUM, int _DX, in
    Cprop(  TOTAL_CELL_NUM ),
    Fprop(  TOTAL_FACE_NUM ),
    Cstate( TOTAL_CELL_NUM ),
-   Fstate( TOTAL_FACE_NUM )
+   Fstate( TOTAL_FACE_NUM ),
+   mass_accumL( std::size_t(TOTAL_CELL_NUM), 0.0 ),
+   mass_accumG( std::size_t(TOTAL_CELL_NUM), 0.0 ),
+   mass_transL( std::size_t(TOTAL_CELL_NUM), 0.0 ),
+   mass_transG( std::size_t(TOTAL_CELL_NUM), 0.0 ),
+   mass_accumL_old( std::size_t(TOTAL_CELL_NUM), 0.0 ),
+   mass_accumG_old( std::size_t(TOTAL_CELL_NUM), 0.0 ),
+   momt_accum( std::size_t(TOTAL_FACE_NUM), 0.0 ),
+   momt_accum_old( std::size_t(TOTAL_FACE_NUM), 0.0 ),
+   momt_trans( std::size_t(TOTAL_FACE_NUM), 0.0 ),
+   momt_press( std::size_t(TOTAL_FACE_NUM), 0.0 ),
+   momt_frict( std::size_t(TOTAL_FACE_NUM), 0.0 ),
+   momt_gravt( std::size_t(TOTAL_FACE_NUM), 0.0 ),
+   residual( std::size_t(TOTAL_CELL_NUM)*2 + std::size_t(TOTAL_FACE_NUM)*2, 0.0 )
 {
-   Setup_SS;
+   Setup_SS();
 }
 
-void Discretization::
+void DiscreteProblem::
 Transfer_StateVector( const StateVector& state )
 {
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
@@ -211,28 +241,35 @@ Transfer_StateVector( const StateVector& state )
    }
 }
 
-void Discretization::
-Initiate_State( StateVector& state )
+void DiscreteProblem::
+initialize_state( StateVector& state )
 {
+   state.resize( TOTAL_CELL_NUM );
+
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
    {
-      state[c].HG = 0.4;
+     state[c].HG = 0.1;
       state[c].P  = 101.325E+03; // Pa
       //
       state[c].HG.make_independent( MassEqnID(c,PhaseID::L) );
-      //state[c].P.make_independent(  MassEqnID(c,PhaseID::G) );
+      state[c].P.make_independent(  MassEqnID(c,PhaseID::G) );
    }
+      
+   //
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
-      state[f].VL = 0.0;
-      state[f].VG = 0.0;
+      // Note:
+      // velocities should NOT be initialized to 0.
+      // when using EPRI-DF model ('DIV/0' is possible when calculating C0)
+      state[f].VL = -0.01;
+      state[f].VG = -0.01;
       //
       state[f].VL.make_independent( MomtEqnID(f) );
       state[f].VG.make_independent( DFlxEqnID(f) );
    }
 }
 
-void Discretization::
+void DiscreteProblem::
 bind_to_old_state( const StateVector& old_state )
 {
    Transfer_StateVector( old_state );
@@ -250,16 +287,51 @@ bind_to_old_state( const StateVector& old_state )
    }
 }
 
-bool Discretization::
+bool DiscreteProblem::
 discretize( const StateVector& state, double dT )
 {
    bool is_badvalue = false;
    Transfer_StateVector( state );
    Compute_Properties();
+   /*
+   std::cout << Cprop[0].Den[PhaseID::L] << std::endl;
+   std::cout << Cprop[0].Den[PhaseID::G] << std::endl;
+   std::cout << Cprop[0].DenM << std::endl;
+   std::cout << Cprop[0].VelM << std::endl;
+   std::cout << Cprop[1].VelM << std::endl;
+   std::cout << std::endl;
+
+   std::cout << Fprop[0].H_[PhaseID::L] << std::endl;
+   std::cout << Fprop[0].H_[PhaseID::G] << std::endl;
+   std::cout << Fprop[0].Den_[PhaseID::L] << std::endl;
+   std::cout << Fprop[0].Den_[PhaseID::G] << std::endl;
+   std::cout << Fprop[0].Vis_[PhaseID::L] << std::endl;
+   std::cout << Fprop[0].Vis_[PhaseID::G] << std::endl;
+   std::cout << Fprop[0].H_Den_[PhaseID::L] << std::endl;
+   std::cout << Fprop[0].H_Den_[PhaseID::G] << std::endl;
+   std::cout << Fprop[0].H_Vis_[PhaseID::L] << std::endl;
+   std::cout << Fprop[0].H_Vis_[PhaseID::G] << std::endl;
+
+   std::cout << Fprop[0].DenM_ << std::endl;
+   std::cout << Fprop[0].VisM_ << std::endl;
+   std::cout << Fprop[0].VelM_ << std::endl;
+   std::cout << std::endl;
+   */
+
    Compute_Mass_Resid( dT );
    Compute_SS();
    Compute_Momt_Resid( dT );
    Compute_DFlx_Resid();
+
+   /*
+   std::cout << residual[0] << std::endl;
+   std::cout << residual[1] << std::endl;
+   std::cout << residual[2] << std::endl;
+   std::cout << residual[3] << std::endl;
+   std::cout << residual[4] << std::endl;
+   std::cout << residual[5] << std::endl;
+   std::cout << std::endl;
+   */
 
    std::size_t eqn_massL, eqn_massG;
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
@@ -280,18 +352,84 @@ discretize( const StateVector& state, double dT )
    return is_badvalue;
 }
 
+bool DiscreteProblem::
+is_converged( ConvergenceInfo& nrm )
+{
+   nrm.MatBal[0] = 0.0;
+   nrm.MatBal[1] = 0.0;
+   bool is_MATBAL_converged = true;
+   bool is_NRMSAT_converged = true;
+
+   double max_R = 0.0;
+   for ( int c=0; c<TOTAL_CELL_NUM; ++c )
+   {
+      double R = std::abs(residual[ MassEqnID( c, PhaseID::L ) ].value());
+      if(R > max_R)   max_R = R;
+   }
+   nrm.NormSat[0] = max_R;
+   //
+   for ( int c=0; c<TOTAL_CELL_NUM; ++c )
+   {
+      double R = std::abs(residual[ MassEqnID( c, PhaseID::G ) ].value());
+      if(R > max_R)   max_R = R;
+   }
+   nrm.NormSat[0] = max_R;
+   //
+   //
+   for ( int f=0; f<TOTAL_FACE_NUM; ++f )
+   {
+      double R = std::abs(residual[ MomtEqnID(f) ].value());
+      if(R > max_R)   max_R = R;
+   }
+   nrm.NormSat[1] = max_R;
+   //   
+   for ( int f=0; f<TOTAL_FACE_NUM; ++f )
+   {
+      double R = std::abs(residual[ DFlxEqnID(f) ].value());
+      if(R > max_R)   max_R = R;
+   }
+   nrm.NormSat[1] = max_R;
+   //
+
+   for( int group=0; group<2; ++group )
+      if ( nrm.NormSat[ group ] > 1.0E-06 )  is_NRMSAT_converged = false;
+
+   return ( is_MATBAL_converged && is_NRMSAT_converged );
+
+}
+
 template< typename R >
-void Discretization::
+void DiscreteProblem::
 update_state( StateVector& state, const R& update, bool do_safeguard )
 {
+   // print state
+   for( int i = 0; i < TOTAL_FACE_NUM; ++i )
+     printf( "%12.3f | %12.3f | %12.3f | %12.3f | ",
+	     state[i].HG.value(), state[i].P.value(), state[i].VL.value(), state[i].VG.value() );
+   int i = TOTAL_CELL_NUM-1;
+   printf( "%12.3f | %12.3f |\n", state[i].HG.value(), state[i].P.value() );
+   // print update
+   for (std::size_t i=0; i<update.size(); ++i )
+     {
+       printf( "%12.3f | ", update[i] );
+     }
+   printf("\n\n");
+
    std::size_t eqn_massL, eqn_massG;
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
    {
       eqn_massL = MassEqnID( c, PhaseID::L );
       eqn_massG = MassEqnID( c, PhaseID::G );
 
-      state[c].HG += update[ eqn_massL ];
+      double update_HG = update[ eqn_massL ];
+      if( update[ eqn_massL ] >  0.1 )   update_HG =  0.1;
+      if( update[ eqn_massL ] < -0.1 )   update_HG = -0.1;
+
+      state[c].HG += update_HG;
       state[c].P  += update[ eqn_massG ];
+
+      if( state[c].HG.value() > 1.0 )   state[c].HG.value() = 1.0;
+      if( state[c].HG.value() < 0.0 )   state[c].HG.value() = 0.0;
    }
    std::size_t eqn_momt, eqn_dflx;
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
@@ -305,7 +443,7 @@ update_state( StateVector& state, const R& update, bool do_safeguard )
 }
 
 template< typename V, typename M >
-void Discretization::
+void DiscreteProblem::
 extract_R_J( V&r, M& m, std::size_t offset )
 {
    residual.extract_CSR( r, m.rowptr(), m.colind(), m.value() );
@@ -314,11 +452,21 @@ extract_R_J( V&r, M& m, std::size_t offset )
    m.check_size();
    if( r.size() != residual.size() )
       std::cout << "BUG IN JACOBIAN\t ZERO ROW FOUND" << r.size() <<"!="<< residual.size() << std::endl;
-   m.ainfo.elliptic_varr_id = 0;
+   m.ainfo.elliptic_var_id = 0;
    m.ainfo.n_vars_per_block = 4;
    m.ainfo.tile_offset      = 0;
    m.ainfo.n_blocks         = TOTAL_CELL_NUM; // I doubt it
    m.ainfo.n_unblocked_vars = 0;
+
+   /*
+   for( std::size_t i = 0; i < residual.size(); ++i )
+     std::cout << residual[i].value() << std::endl;
+
+   for( std::size_t i = 0; i < residual.size(); ++i )
+     std::cout << residual[i] << std::endl;
+   std::cout << std::endl;
+   std::cout << m << std::endl;
+   */
 }
 
 
@@ -326,21 +474,23 @@ extract_R_J( V&r, M& m, std::size_t offset )
 // ------------- Staggered grid scheme -----------------
 // -----------------------------------------------------
 // Section: Property
-void Discretization::
+void DiscreteProblem::
 Compute_CellProp_PropCacl()
 {
    // DenL, DenG, DenM
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
    {
       Cprop[c].Den[PhaseID::L] = PropCalc.Density_Wat( Cstate[c].P );
-      Cprop[c].Den[PhaseID::G] = PropCalc.Density_Air( Cstate[c].P, 50.0 );
-      Cprop[c].DenM = PropCalc.Density_Mix( Cstate[c].HG * Cprop[c].Den[PhaseID::L],
+      Cprop[c].Den[PhaseID::G] = PropCalc.Density_Air( Cstate[c].P, 25.0 );
+      Cprop[c].Vis[PhaseID::L] = PropCalc.Viscosity_Wat();
+      Cprop[c].Vis[PhaseID::G] = PropCalc.Viscosity_Air();
+      Cprop[c].DenM = PropCalc.Density_Mix( (1.0-Cstate[c].HG) * Cprop[c].Den[PhaseID::L],
 					    Cstate[c].HG * Cprop[c].Den[PhaseID::G] );
    }
 }
 
 // Section: Property
-void Discretization::
+void DiscreteProblem::
 Compute_FaceProp_Upwind()
 {
    // H_Den_, DenM_, VelM_
@@ -358,8 +508,9 @@ Compute_FaceProp_Upwind()
       HL = 1.0 - Cstate[C].HG;
       Fprop[f].H_[PhaseID::L]     = HL;
       Fprop[f].Den_[PhaseID::L]   = Cprop[C].Den[PhaseID::L];
-      Fprop[f].Vis_[PhaseID::L]   = PropCalc.Viscosity_Wat();
+      Fprop[f].Vis_[PhaseID::L]   = Cprop[C].Vis[PhaseID::L];
       Fprop[f].H_Den_[PhaseID::L] = HL * Cprop[C].Den[PhaseID::L];
+      Fprop[f].H_Vis_[PhaseID::L] = HL * Cprop[C].Vis[PhaseID::L];
 
       // gas
       if( Fstate[f].VG.value() >= 0.0 )   C = LC;
@@ -367,8 +518,9 @@ Compute_FaceProp_Upwind()
       HG = Cstate[C].HG;
       Fprop[f].H_[PhaseID::G]     = HG;
       Fprop[f].Den_[PhaseID::G]   = Cprop[C].Den[PhaseID::G];
-      Fprop[f].Vis_[PhaseID::L]   = PropCalc.Viscosity_Wat();
+      Fprop[f].Vis_[PhaseID::G]   = Cprop[C].Vis[PhaseID::G];
       Fprop[f].H_Den_[PhaseID::G] = HG * Cprop[C].Den[PhaseID::G];
+      Fprop[f].H_Vis_[PhaseID::G] = HG * Cprop[C].Vis[PhaseID::G];
 
       // mixture: DenM_, VelM_
       Fprop[f].DenM_ = PropCalc.Density_Mix(   Fprop[f].H_Den_[PhaseID::L],
@@ -382,7 +534,7 @@ Compute_FaceProp_Upwind()
 }
 
 // Section: Property
-void Discretization::
+void DiscreteProblem::
 Compute_CellProp_Upwind()
 {
    // VelM
@@ -427,7 +579,7 @@ Compute_CellProp_Upwind()
 }
 
 // Section: Property
-void Discretization::
+void DiscreteProblem::
 Compute_Properties()
 {
    Compute_CellProp_PropCacl();
@@ -436,7 +588,7 @@ Compute_Properties()
 }
 
 // Section: Mass
-void Discretization::
+void DiscreteProblem::
 Compute_Mass_Accum()
 {
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
@@ -447,7 +599,7 @@ Compute_Mass_Accum()
 }
 
 // Section: Mass
-void Discretization::
+void DiscreteProblem::
 Compute_Mass_Trans()
 {
    for( int c = 0; c < TOTAL_CELL_NUM; ++c )
@@ -474,7 +626,7 @@ Compute_Mass_Trans()
 }
 
 // Section: Mass
-void Discretization::
+void DiscreteProblem::
 Compute_Mass_Resid( double dT )
 {
    Compute_Mass_Accum();
@@ -490,7 +642,18 @@ Compute_Mass_Resid( double dT )
       MassG_ID = MassEqnID( c, PhaseID::G );
       
       residual[ MassL_ID ] = ( mass_accumL[c] - mass_accumL_old[c] ) / dT + mass_transL[c];
-      residual[ MassG_ID ] = ( mass_accumL[c] - mass_accumG_old[c] ) / dT + mass_transG[c];
+      residual[ MassG_ID ] = ( mass_accumG[c] - mass_accumG_old[c] ) / dT + mass_transG[c];
+
+      /*
+      std::cout << std::endl
+		<< "Cell#" << c << "  |  MassL_ID = " << MassL_ID << "  |  MassL_ID = " << MassL_ID
+		<< std::endl << std::endl
+		<< mass_accumL[c] << std::endl
+		<< mass_accumL_old[c] << std::endl 
+		<< mass_transL[c] << std::endl
+		<< residual[ MassL_ID ] << std::endl
+		<< std::endl;
+      */
    }
 
 
@@ -498,7 +661,7 @@ Compute_Mass_Resid( double dT )
 
 
 // Section: Momentum
-void Discretization::
+void DiscreteProblem::
 Compute_Momt_Accum()
 {
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
@@ -508,7 +671,7 @@ Compute_Momt_Accum()
 }
 
 // Section: Momentum
-void Discretization::
+void DiscreteProblem::
 Compute_Momt_Trans()
 {
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
@@ -521,7 +684,7 @@ Compute_Momt_Trans()
 }
 
 // Section: Momentum
-void Discretization::
+void DiscreteProblem::
 Compute_Momt_Press()
 {
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
@@ -533,7 +696,7 @@ Compute_Momt_Press()
 }
 
 // Section: Momentum
-void Discretization::
+void DiscreteProblem::
 Compute_Momt_Frict()
 {
    // Units
@@ -553,7 +716,7 @@ Compute_Momt_Frict()
 }
 
 // Section: Momentum
-void Discretization::
+void DiscreteProblem::
 Compute_Momt_Gravt()
 {
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
@@ -563,7 +726,7 @@ Compute_Momt_Gravt()
 }
 
 // Section: Momentum
-void Discretization::
+void DiscreteProblem::
 Compute_Momt_Resid( double dT )
 {
    Compute_Momt_Accum();
@@ -575,21 +738,33 @@ Compute_Momt_Resid( double dT )
    for( int f = 0; f < TOTAL_FACE_NUM; ++f )
    {
       int Momt_ID = MomtEqnID( f );
-      residual[ Momt_ID ] = (momt_accum[f] - momt_accum[f])/dT + momt_trans[f] + momt_press[f]
+      residual[ Momt_ID ] = (momt_accum[f] - momt_accum_old[f])/dT + momt_trans[f] + momt_press[f]
 	 + momt_frict[f] - momt_gravt[f];
+
+      /*
+      std::cout << "Face# " << f << "  |  Momt_ID = " << Momt_ID << std::endl
+		<< std::endl
+		<< momt_accum[f] << std::endl
+		<< momt_accum_old[f] << std::endl
+		<< momt_trans[f] << std::endl
+		<< momt_press[f] << std::endl
+		<< momt_frict[f] << std::endl
+		<< momt_gravt[f] << std::endl
+		<< std::endl << std::endl;
+      */
    }
 }
 
 // Section: Drift-Flux
-void Discretization::
+void DiscreteProblem::
 Compute_DFlx_Resid()
 {
 
    ADs c0( 0.0 ), vgj( 0.0 );
    ADs reG( 0.0 ), reL( 0.0 ), re( 0.0 );
-   ADs L( 0.0 ), a1( 0.0 ), b1( 0.0 ), k0( 0.0 ), r( 0.0 );
+   ADs L( 0.0 ), b1( 0.0 ), k0( 0.0 ), r( 0.0 );
    ADs c1( 0.0 ), c2( 0.0 ), c3( 0.0 );
-   ADs c1x( 0.0 ), c5( 0.0 ), c10( 0.0 );
+   ADs c1x( 0.0 ), c10( 0.0 );
    ADs vsL( 0.0 ), vsG( 0.0 ), vs( 0.0 );
    ADs gama( 0.0 ), jfrx( 0.0 );
    double c4;
@@ -610,12 +785,14 @@ Compute_DFlx_Resid()
       const ADs& visL = Fprop[f].Vis_[ PhaseID::L ];
       const ADs& visG = Fprop[f].Vis_[ PhaseID::G ];
 
-      if( cos_theta * VL.value() >= 0.0 && cos_theta * VG.value() >= 0.0 )
+      if( VL.value() <= 0.0 && VG.value() < 0.0 )
 	 status = 0; // co-down
-      else if( cos_theta * VL.value() < 0.0 && cos_theta * VG.value() < 0.0 )
+      else if( VL.value() >= 0.0 && VG.value() >= 0.0 )
 	 status = 1; // co-up
       else
 	 status = 2; // counter-current
+
+      // std::cout << "status = " << status << std::endl;
 
       reL = epri.ReyNum( denL, VL, visL, D );
       reG = epri.ReyNum( denG, VG, visG, D );
@@ -680,50 +857,102 @@ Compute_DFlx_Resid()
 
       int DFlx_ID = DFlxEqnID( f );
       residual[ DFlx_ID ] = Fstate[f].VG - c0*vs - vgj;
+      /*
+      std::cout << "Face# " << f << "  |  DFlx_ID = " << DFlx_ID << std::endl
+		<< "--------------------" << std::endl
+		<< L << std::endl
+		<< re << std::endl
+		<< b1 << std::endl
+		<< k0 << std::endl
+		<< r << std::endl
+		<< c0 << std::endl
+		<< vgj << std::endl
+		<< std::endl
+		<< residual[ DFlx_ID ] << std::endl
+		<< std::endl;
+      */
    }
 }
 
-void Discretization::
+void DiscreteProblem::
 Setup_SS()
 {
    ss.resize( 2 );
    
-   // Top: source
-   ss[0].loc = 0;
-   ss[0].is_source = true;
-   ss[0].mode = SSMode::FixQ;
-   Q[ PhaseID::G ] = -1.0;
-   Q[ PhaseID::L ] = -1.0;
-   
+   // Well-Bottom: sink
+   ss[0].loc             = 0;
+   ss[0].is_source       = false;
+   ss[0].mode            = SSMode::FixQt;
+   ss[0].Qt              = 0.1;
 
-   // Bottom: sink
-   ss[1].loc = TOTAL_CELL_NUM - 1;
-   ss[1].is_source = false;
-   ss[1].mode = SSMode::FixQ;
-   Q[ PhaseID::G ] = 1.0;
-   Q[ PhaseID::L ] = 1.0;
+   // Well-Top: source
+   ss[1].loc             = TOTAL_CELL_NUM - 1;
+   ss[1].is_source       = true;
+   ss[1].mode            = SSMode::FixQp;
+   ss[1].Q[ PhaseID::G ] = -0.1;
+   ss[1].Q[ PhaseID::L ] = -0.0;;
 }
 
-void Discretization::
+void DiscreteProblem::
 Compute_SS()
 {
    const double dV = 3.1415926 / 4.0 * D * D * dX;
-   for( int i = 0; i < ss.size(); ++i )
+   for( std::size_t i = 0; i < ss.size(); ++i )
    {
       std::size_t loc = ss[i].loc;
+      ADs QL( 0.0 ), QG( 0.0 );
       
-      if( ss[i].mode = Mode::FixQ )
+      if( ss[i].mode == SSMode::FixQp )
       {
-	 ADs QL( 0.0 ), QG( 0.0 );
 	 QL = Cprop[loc].Den[PhaseID::L] * ss[i].Q[PhaseID::L] / dV;
-	 residual[ MassEqnID( loc, PhaseID::L ) ] -= QL;
-
 	 QG = Cprop[loc].Den[PhaseID::G] * ss[i].Q[PhaseID::G] / dV;
-	 residual[ MassEqnID( loc, PhaseID::G ) ] -= QG;
+
       }
-      else // FixP
+      else // FixQt
       {
-	 // ... ...
+	 const ADs& HG = Cstate[loc].HG;
+	 
+	 QL = Cprop[loc].Den[PhaseID::L] * ss[i].Qt * (1.0-HG) / dV;
+	 QG = Cprop[loc].Den[PhaseID::G] * ss[i].Qt *      HG / dV;
       }
+      //
+      residual[ MassEqnID( loc, PhaseID::L ) ] += QL;
+      residual[ MassEqnID( loc, PhaseID::G ) ] += QG;	
    }
+}
+
+
+
+std::ostream & operator << ( std::ostream & ostr,
+                             const DiscreteProblem::ConvergenceInfo & _out )
+{
+   ostr << _out.NormSat[0]  << "\t"
+        << _out.NormSat[1]  << "\t"
+        << _out.MatBal[0]  << "\t"
+        << _out.MatBal[1]  << std::endl;
+
+   return ostr;
+}
+
+
+std::ostream & operator << ( std::ostream & ostr,
+                             const DiscreteProblem::StateVector & _out )
+{
+  std::size_t C = _out.size();
+  std::cout << "TOTAL_CELL_NUM = " << C << std::endl;
+
+  for( std::size_t c = 0; c < C; ++c )
+    {
+      std::cout << "------------------------------- In Cell # " << c << std::endl;
+      ostr << "HG = " << _out[c].HG.value()  << std::endl
+           << "P  = " << _out[c].P.value()  << std::endl;
+    }
+  for( std::size_t f = 0; f < C-1; ++f )
+    {
+      std::cout << "------------------------------- In Cell # " << f << std::endl;
+      ostr << "VL = " << _out[f].VL.value()  << std::endl
+           << "VG = " << _out[f].VG.value()  << std::endl;
+    }
+
+   return ostr;
 }
